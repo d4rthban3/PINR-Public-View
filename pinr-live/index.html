@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0A0C0E" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>PINR</title>
+    <script src="/theme-init.js"></script>
+    <style>
+      #bootCover{position:fixed;inset:0;z-index:10000;container-type:size;
+        /*
+           1200 x 1200, its logo drawn at translate(453.525 427.2) scale(1.35): 293 x 345.6 art units, centred on 600,600) fills a box 114% of the screen (cover, centred). --u is one art unit in
+           screen px. At phone width in the dark look the background is the creep video (720 x 1560: the same art, 0.6 of a video pixel per art unit, centred). */
+        --u:calc(1.14*max(100cqw,100cqh)/1200)}
+      @media (max-width:599.98px){:root:not([data-theme=light]) #bootCover{--u:calc(0.6*1.14*max(100cqw/720,100cqh/1560))}}
+      #bootCover .boot-veil{position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,#2C1458 0%,#180830 35%,#000 88%)}
+      #bootCover .boot-fore{position:absolute;inset:0;z-index:2}
+      /* The anchor takes the background's own placement (its drift and swell against the camera) from bootveil.js, so the two logos stay one. */
+      #bootCover .boot-anchor{position:absolute;inset:0;transform-origin:50% 50%}
+      #bootCover .boot-glow{position:absolute;left:50%;top:50%;width:calc(var(--u)*470);height:calc(var(--u)*470);margin:calc(var(--u)*-235) 0 0 calc(var(--u)*-235);border-radius:50%;pointer-events:none;filter:blur(48px);background:radial-gradient(circle,rgba(192,132,252,.35) 0%,rgba(139,92,246,.15) 60%,rgba(0,0,0,0) 100%);animation:boot-pulse 6.5s cubic-bezier(.4,0,.6,1) infinite}
+      #bootCover .boot-mark{position:absolute;left:50%;top:50%;width:calc(var(--u)*292.95);height:calc(var(--u)*345.6);margin:calc(var(--u)*-172.8) 0 0 calc(var(--u)*-146.475);transform-origin:50% 50%}
+      #bootCover .boot-mark svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+      #bootCover .bl-big{animation:boot-bigin .95s cubic-bezier(.2,.8,.25,1) both}
+      #bootCover .bl-small{animation:boot-smallin .95s cubic-bezier(.2,.8,.25,1) .1s both}
+      #bootCover .boot-ring{position:absolute;left:50%;top:50%;width:calc(var(--u)*212);height:calc(var(--u)*212);margin:calc(var(--u)*-106) 0 0 calc(var(--u)*-106);border-radius:50%;border:2px solid #d6ff3c;opacity:0;pointer-events:none;animation:boot-radar 1.3s cubic-bezier(.2,.6,.3,1) 1.05s both}
+      #bootCover .boot-ring.r2{animation-delay:1.45s}
+      @media (min-width:760px){
+        #bootCover .bl-big{animation-duration:1.7s}
+        #bootCover .bl-small{animation-duration:1.7s;animation-delay:.25s}
+        #bootCover .boot-ring{animation-duration:1.9s;animation-delay:2.1s}
+        #bootCover .boot-ring.r2{animation-delay:2.8s}
+        #bootCover.boot-hide .boot-veil{animation-duration:2.6s}
+        #bootCover.boot-hide .boot-fore{animation-duration:1.2s}
+      }
+      /* The travel is in screen units (cq), so the blades start off the screen at every size. */
+      @keyframes boot-bigin{from{transform:translate(65cqw,-65cqh);opacity:0}to{transform:none;opacity:1}}
+      @keyframes boot-smallin{from{transform:translate(-65cqw,65cqh);opacity:0}to{transform:none;opacity:1}}
+      @keyframes boot-radar{0%{transform:scale(.4);opacity:.7}100%{transform:scale(4.2);opacity:0}}
+      #bootCover .boot-bar{position:absolute;left:50%;margin-left:-32px;top:calc(50% + var(--u)*172.8 + 40px);width:64px;height:2px;background:linear-gradient(90deg,transparent,#bef264,transparent);animation:boot-pulse 2s cubic-bezier(.4,0,.6,1) infinite}
+      #bootCover.boot-hide{pointer-events:none}
+      #bootCover.boot-hide .boot-veil{animation:boot-fade 2s linear forwards}
+      #bootCover.boot-hide .boot-fore{animation:boot-fade .9s linear forwards}
+      @keyframes boot-fade{to{opacity:0}}
+      @keyframes boot-pulse{50%{opacity:.5}}
+      @media (prefers-reduced-motion:reduce){#bootCover .boot-glow,#bootCover .boot-bar,#bootCover .bl-big,#bootCover .bl-small{animation:none}#bootCover .boot-ring{display:none}#bootCover.boot-hide .boot-veil,#bootCover.boot-hide .boot-fore{animation-duration:.25s}}
+    </style>
+  </head>
+  <body>
+    <div id="bootCover" role="status" aria-label="Loading"><div class="boot-veil"></div><div class="boot-fore"><div class="boot-anchor"><div class="boot-glow"></div><div class="boot-ring"></div><div class="boot-ring r2"></div><div class="boot-mark"><svg class="bl-big" viewBox="0 0 217 256" aria-hidden="true"><path fill="#F4EEFF" d="M182.75,7.01c6.93-8.26,19.39-9.34,27.63-2.38,8.24,6.96,9.29,19.5,2.37,27.78C141.79,106.89,70.86,181.39-.1,255.86,60.86,172.91,121.8,89.97,182.75,7.01Z"/><path fill="#D6FF3C" d="M182.75,7.01c6.97-8.33,19.34-9.39,27.63-2.38h0c8.29,7.01,9.34,19.45,2.37,27.78l-38.14,14.94h0l8.16-40.34h-.02Z"/></svg><svg class="bl-small" viewBox="0 0 217 256" aria-hidden="true"><path fill="#CDB6FE" d="M183.63,92.04h0l-108.17,157.94c-5.26,6.51-14.86,7.57-21.44,2.36h0c-6.57-5.2-7.63-14.7-2.37-21.21L183.63,92.04Z"/><path fill="#D6FF3C" d="M75.49,250.04c-5.26,6.43-14.88,7.48-21.45,2.35h0c-6.59-5.14-7.65-14.51-2.36-20.94l29.42-12.04h0l-5.58,30.64h-.02Z"/></svg></div></div><div class="boot-bar"></div></div></div>
+    <script src="/bootveil.js"></script>
+    <div id="bg">
+      <!--
+           (under 600 px, the site's own phone line) the creep video, as in the iPhone and Android apps. The video's source is
+           set from the page's code only at phone width, so a desktop never downloads it, and only once the first tiles are up and
+           
+           required for phones to autoplay. If a phone refuses (Low Power Mode), the poster still frame stays up instead. -->
+      <div id="bgsvg" aria-hidden="true"><div class="bgstage"><img class="bgl base" src="/art/bgl-dark-base.svg" alt="" decoding="async" /></div></div>
+      <video
+        id="bgvid"
+        data-src="/art/pinr-bg-creep240.mp4"
+        data-poster="/art/pinr-system-teaser-mobile-poster.jpg"
+        autoplay
+        muted
+        loop
+        playsinline
+        preload="auto"
+        disablepictureinpicture
+        aria-hidden="true"
+      ></video>
+    </div>
+    <canvas id="grid"></canvas>
+    <!-- The band between the header and the footer. Everything inside is cut cleanly at its edges with a plain
+         rectangular crop (cheap on a phone), and #inner keeps the layers' coordinates the same as the screen's. -->
+    <div id="clipper">
+      <div id="inner">
+        <div id="pages"></div>
+        <div id="glassLayer"></div>
+        <canvas id="streams"></canvas>
+        <div id="stage"></div>
+      </div>
+    </div>
+    <div id="hud" aria-hidden="true"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

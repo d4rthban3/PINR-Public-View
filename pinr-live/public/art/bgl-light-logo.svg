@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" fill="none">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="43%" r="68%">
+      <stop offset="0" stop-color="#F4EFFC"/>
+      <stop offset=".48" stop-color="#EAE3F7"/>
+      <stop offset="1" stop-color="#DCD2EF"/>
+    </radialGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#8A5CFF" stop-opacity=".22"/>
+      <stop offset=".48" stop-color="#6C4DFB" stop-opacity=".10"/>
+      <stop offset="1" stop-color="#6C4DFB" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="leftFlow" x1="168" y1="600" x2="600" y2="600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A21FE0" stop-opacity="0"/>
+      <stop offset=".55" stop-color="#7B3FE4" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#4B2BB0"/>
+    </linearGradient>
+    <linearGradient id="rightFlow" x1="1032" y1="600" x2="600" y2="600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7FA800" stop-opacity="0"/>
+      <stop offset=".55" stop-color="#6E9400" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#3F5A00"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="252" y1="288" x2="948" y2="912" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A21FE0" stop-opacity=".22"/>
+      <stop offset=".5" stop-color="#6C4DFB" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#6E9400" stop-opacity=".28"/>
+    </linearGradient>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="32"/>
+    </filter>
+    <pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse">
+      <circle cx="7" cy="13" r="1" fill="#6C4DFB" opacity=".16"/>
+      <circle cx="61" cy="42" r=".8" fill="#6E9400" opacity=".2"/>
+      <circle cx="31" cy="83" r=".7" fill="#8A5CFF" opacity=".18"/>
+    </pattern>
+    <path id="leftTrack" d="M145 600C275 600 300 455 424 483C493 499 524 562 584 600"/>
+    <path id="rightTrack" d="M1055 600C925 600 900 455 776 483C707 499 676 562 616 600"/>
+    <path id="orbitTrack" d="M600 154A446 446 0 1 1 599.9 154"/>
+    <style>
+      .slow { animation: drift 208s linear infinite; transform-origin: 600px 600px; }
+      .counter { animation: drift 272s linear infinite reverse; transform-origin: 600px 600px; }
+      .breathe { animation: breathe 35.2s ease-in-out infinite; transform-origin: 600px 600px; }
+      .pulse { animation: pulse 30.4s ease-out infinite; transform-origin: 600px 600px; }
+      .twinkle { animation: twinkle 22.4s ease-in-out infinite; }
+      .flowA { animation: dash 44s linear infinite; }
+      .flowB { animation: dash 51.2s linear infinite reverse; }
+      @keyframes drift { to { transform: rotate(360deg); } }
+      @keyframes breathe { 0%,100% { opacity:.56; transform:scale(.96); } 50% { opacity:1; transform:scale(1.045); } }
+      @keyframes pulse { 0% { opacity:0; transform:scale(.68); } 18% { opacity:.72; } 100% { opacity:0; transform:scale(1.55); } }
+      @keyframes twinkle { 0%,100% { opacity:.32; } 50% { opacity:1; } }
+      @keyframes dash { to { stroke-dashoffset:-160; } }
+      @media (prefers-reduced-motion: reduce) {
+        .slow,.counter,.breathe,.pulse,.twinkle,.flowA,.flowB { animation:none !important; }
+        .moving-particles { display:none; }
+      }
+    </style>
+  </defs>
+  <circle cx="600" cy="600" r="170" fill="url(#core)"/>
+  <g transform="translate(453.525 427.2) scale(1.35)">
+    <g>
+      <path fill="#4B3F78" fill-opacity=".6" d="M182.75 7.01c6.93-8.26 19.39-9.34 27.63-2.38 8.24 6.96 9.29 19.5 2.37 27.78C141.79 106.89 70.86 181.39-.1 255.86 60.86 172.91 121.8 89.97 182.75 7.01Z"/>
+      <path fill="#D6FF3C" d="M182.75 7.01c6.97-8.33 19.34-9.39 27.63-2.38h0c8.29 7.01 9.34 19.45 2.37 27.78l-38.14 14.94h0l8.16-40.34h-.02Z"/>
+      <path fill="#6C4DFB" fill-opacity=".7" d="M183.63 92.04h0L75.46 249.98c-5.26 6.51-14.86 7.57-21.44 2.36h0c-6.57-5.2-7.63-14.7-2.37-21.21L183.63 92.04Z"/>
+      <path fill="#D6FF3C" d="M75.49 250.04c-5.26 6.43-14.88 7.48-21.45 2.35h0c-6.59-5.14-7.65-14.51-2.36-20.94l29.42-12.04h0l-5.58 30.64h-.02Z"/>
+    </g>
+  </g>
+</svg>
