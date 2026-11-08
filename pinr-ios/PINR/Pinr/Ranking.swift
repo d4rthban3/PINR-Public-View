@@ -12,16 +12,16 @@ enum PinrFilter: String, CaseIterable, Identifiable, Sendable {
         case .trending: "Trending"
         case .movers: "Movers"
         case .new: "New Launches"
-        case .pinrscore: "PINRscore"
+        case .pinrscore: "Token health"
         }
     }
 
     var hint: String {
         switch self {
         case .trending: "Most active right now"
-        case .movers: "Biggest score swings"
+        case .movers: "Biggest token health swings"
         case .new: "Under an hour old"
-        case .pinrscore: "Real, scored projects by score"
+        case .pinrscore: "Real projects, by token health"
         }
     }
 }
@@ -80,7 +80,7 @@ enum Ranking {
         return age <= recentWindow && age >= -60 ? d : nil
     }
 
-    /// The PINRscore as a number, or nil (unscored, flagged, nothing loaded): never zero.
+    /// The Token health as a number, or nil (unscored, flagged, nothing loaded): never zero.
     static func scoreOf(_ t: Token) -> Int? {
         guard t.label == nil, t.coverage > 0 else { return nil }
         return t.score

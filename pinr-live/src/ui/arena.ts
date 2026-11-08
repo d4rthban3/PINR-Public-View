@@ -6,6 +6,22 @@ import { attachPageGestures, createPlacer, type GestureOptions, type Placement }
 import { tagChips } from "../world/tags";
 import { pinchScene, type Scene } from "./pinch";
 import { visibleText } from "../world/visibletext";
+import { moderation } from "../world/moderation";
+
+/**
+ * Item 114: with Show Mayhem off (the default), a MAYHEM member leaves its battle, and a battle left with fewer than two versions is not
+ * shown; the rest keep their order, and the battle takes its title from its first version left.
+ */
+export function arenaShown(groups: readonly ArenaGroup[], showMayhem: boolean): ArenaGroup[] {
+  if (showMayhem) return [...groups];
+  const out: ArenaGroup[] = [];
+  for (const g of groups) {
+    const members = g.members.filter((m) => !m.mayhem);
+    if (members.length < 2) continue;
+    out.push(members.length === g.members.length ? g : { ...g, members, title: members[0]!.name, ticker: members[0]!.ticker, recentUsd: members.reduce((n, m) => n + m.recentUsd, 0) });
+  }
+  return out;
+}
 
 /**
  *
@@ -131,6 +147,13 @@ export function createArenaPage(opts: ArenaOptions): ArenaPage {
   input.setAttribute("aria-label", "Search the Arena");
   input.enterKeyHint = "search";
   searchForm.append(input);
+  //
+  searchForm.addEventListener("pointerdown", (e) => {
+    if (e.target !== input) {
+      e.preventDefault();
+      input.focus();
+    }
+  });
   searchForm.addEventListener("submit", (e) => {
     e.preventDefault();
     input.blur();
@@ -140,6 +163,12 @@ export function createArenaPage(opts: ArenaOptions): ArenaPage {
   found.hidden = true;
   page.append(searchWrap, head, found, list, foot);
   let groups: ArenaGroup[] = [];
+  let allGroups: ArenaGroup[] = [];
+  // Item 114: Show Mayhem switched on or off redraws the battles at once.
+  moderation.onChange(() => {
+    groups = arenaShown(allGroups, moderation.showMayhem);
+    draw();
+  });
   let asOfMs = 0;
 
   let live = false;
@@ -160,7 +189,8 @@ export function createArenaPage(opts: ArenaOptions): ArenaPage {
     const k = JSON.stringify(got.groups);
     if (k === key) return;
     key = k;
-    groups = got.groups;
+    allGroups = got.groups;
+    groups = arenaShown(allGroups, moderation.showMayhem);
     asOfMs = got.asOfMs;
     draw();
   }

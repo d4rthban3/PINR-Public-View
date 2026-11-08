@@ -66,6 +66,7 @@ object Brand {
     val tagBot: Color get() = pick(0xFFFF7AA2, 0xFFB3124F)
     val lilac = Color(0xFFCDB6FE)
     val violet = Color(0xFF6C4DFB)
+    val violetWords: Color get() = pick(0xFF917AFC, 0xFF6C4DFB)
     /** Text on a lime field (`--on-live`). */
     val onLive: Color get() = pick(0xFF0A0C0E, 0xFFFFFFFF)
     /** Tile and bar glass: black at 80% in the dark look, white at 80% in the light one (`--glass-rgb`). */
@@ -77,7 +78,7 @@ object Brand {
     /** Mismatch is the one red the site uses for the feed status. */
     val alarm = Color(0xFFFF4D4D)
 
-    /** The PINRscore colour scale: mandarin at 25 and below, lime at 95 and above, a smooth blend between (scorecolor.ts). */
+    /** The Token health colour scale: mandarin at 25 and below, lime at 95 and above, a smooth blend between (scorecolor.ts). */
     fun score(s: Int): Color {
         val t = min(1f, max(0f, (s - 25) / 70f))
         val light = ThemeState.light

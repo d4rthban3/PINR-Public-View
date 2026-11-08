@@ -1,29 +1,41 @@
 import Foundation
 
-/// A tile's ribbon: trade streaks, lime for buys and mandarin for sells, in the real mix
-/// (pinr-live/src/world/livefeed.ts and flow.ts). No trades in the last hour: no ribbon.
+/// A tile's ribbon: one dot for each REAL trade the app heard from the stream, lime for a buy and mandarin for a sell
+//
+//
 struct Ribbon: Equatable, Sendable {
-    /// Share of buys, 0...1.
-    let buyShare: Double
-    /// How fast the streaks travel, in ribbon lengths a second: calm coins drift, busy ones rush.
-    let speed: Double
-    /// True when the mix is counted in trades, not dollars (drawn faint).
-    let isCount: Bool
     //
     let lean: Double?
 
-    /// Below this many trades a mix means little, so the streaks show an even mix (they still show it trades).
-    static let minTrades = 3
+    init(_ flow: Token.Flow?) {
+        if let f = flow, f.buy5m + f.sell5m > 0 { lean = (f.buy5m - f.sell5m) / (f.buy5m + f.sell5m) } else { lean = nil }
+    }
 
-    init?(_ flow: Token.Flow?) {
-        guard let f = flow, f.trades1h > 0 else { return nil }
-        func share(_ b: Double, _ s: Double) -> Double { b + s > 0 ? b / (b + s) : 0.5 }
-        let hour = f.trades1h >= Self.minTrades ? share(f.buy1h, f.sell1h) : 0.5
-        buyShare = f.trades5m >= Self.minTrades ? share(f.buy5m, f.sell5m) : hour
-        let busy = f.trades5m > 0 ? min(1, log10(1 + Double(f.trades5m)) / 2.5) : 0
-        speed = 0.05 + 0.35 * busy
-        isCount = f.isCount
-        lean = f.buy5m + f.sell5m > 0 ? (f.buy5m - f.sell5m) / (f.buy5m + f.sell5m) : nil
+    /// Ribbon lengths a second (the site's REAL_SPEED): a dot crosses in about 3 seconds.
+    static let speed = 0.33
+    /// A dot gone past the right edge by this much is not drawn.
+    static let pastEdge = 1.08
+
+    /// One heard trade as a dot: where it is (0 = old edge, 1 = now), buy or sell, size 0...1, and its fixed height in the band (0 top, 1 bottom).
+    struct Dot: Equatable {
+        let u: Double, buy: Bool, size: Double, y: Double
+    }
+
+    /// The dots at `now`, from the trades heard for this coin: each is born at the old edge when heard and rides on; a fixed spread per trade, the same on every frame.
+    static func dots(_ trades: [RealTrades.Heard], now: Date) -> [Dot] {
+        var out: [Dot] = []
+        var k = 0, prev: Date?
+        for t in trades {
+            k = (prev == t.at) ? k + 1 : 0 // trades heard at one instant are a burst: spaced along the ribbon, not stacked (the site's stepReal)
+            prev = t.at
+            let age = now.timeIntervalSince(t.at)
+            guard age >= 0 else { continue }
+            let h = (t.at.timeIntervalSinceReferenceDate * 1000).truncatingRemainder(dividingBy: 100_000)
+            let u = age * speed + Double(min(k, 10)) * 0.02 + hash(h + Double(k) * 7) * 0.03
+            guard u <= pastEdge else { continue }
+            out.append(Dot(u: min(u, 1), buy: t.buy, size: t.size, y: (hash(h + 17 + Double(k) * 7) * 3).rounded(.down) / 2 * 0.9 + 0.05 + (hash(h + 31) - 0.5) * 0.12))
+        }
+        return out
     }
 
     /// Within this of zero the two sides are level (within 5% of each other).
@@ -42,19 +54,6 @@ struct Ribbon: Equatable, Sendable {
         return lean > 0 ? "buyers ahead" : "sellers ahead"
     }
 
-    /// Streaks on one ribbon length (fixed, so a faster ribbon never looks thicker).
-    static let streaks = 12
-
-    /// Where streak `i` is at time `t` (0 = oldest edge, 1 = now) and whether it is a buy.
-    func streak(_ i: Int, at t: Double) -> (u: Double, buy: Bool) {
-        let seed = Self.hash(i)
-        let u = (seed + t * speed).truncatingRemainder(dividingBy: 1)
-        return (u, Self.hash(i + 7919) < buyShare)
-    }
-
-    /// Each streak's height in the band (0 top, 1 bottom) and its size (0 small, 1 big): fixed per streak.
-    static func lane(_ i: Int) -> (y: Double, size: Double) { (hash(i + 104_729), hash(i + 1_299_709)) }
-
     /// How far a trade of this size (0...1) rides from the line, in tile heights: up (negative) for a buy, down for a sell; near "now" (u = 1) it swoops further.
     static let sizeRange = 0.17, swoop = 0.6
     static func sizeOffset(_ size: Double, buy: Bool, u: Double) -> Double {
@@ -64,8 +63,8 @@ struct Ribbon: Equatable, Sendable {
     }
 
     /// A fixed spread in 0..<1 for each streak, the same on every frame.
-    private static func hash(_ i: Int) -> Double {
-        let x = sin(Double(i) * 12.9898 + 78.233) * 43758.5453
+    private static func hash(_ i: Double) -> Double {
+        let x = sin(i * 12.9898 + 78.233) * 43758.5453
         return x - x.rounded(.down)
     }
 }

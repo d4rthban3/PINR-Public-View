@@ -8,7 +8,7 @@ enum class DiscoverTab(val label: String, val hint: String) {
     Trending("Trending", "Most active right now"),
     Movers("Top Movers", "Largest 24h moves"),
     Fresh("Fresh Launches", "Under an hour old"),
-    PinrScore("PINRscore", "Scored tokens, by PINRscore"),
+    PinrScore("Token health", "Tokens PINR has read, by token health"),
     BaseBnb("Base/BNB", "Base and BNB Chain coins, newest first"),
 }
 

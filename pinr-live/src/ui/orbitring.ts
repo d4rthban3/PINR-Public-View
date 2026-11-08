@@ -10,6 +10,8 @@ import { navTrail } from "../world/navtrail";
  */
 const SVG = "http://www.w3.org/2000/svg";
 const MAX_SHOWN = 12;
+/** Half the smallest tap size on a phone, in screen pixels: every node and point takes a tap 44 px across, however small it is drawn. */
+const TAP_HALF = 22;
 
 export interface RingOptions {
   ticker: string;
@@ -30,6 +32,13 @@ interface N {
   kind: Kind;
   world: V3;
   el: SVGGElement;
+  /**
+   *
+   * inside an SVG changes, which on a phone cost every frame of a drag; a scale on the box outside is only repainted.
+   */
+  box: SVGSVGElement;
+  /** An invisible circle under the drawn one, sized each frame so the tap area is at least 44 px across on screen (null for the hub). */
+  tap: SVGCircleElement | null;
   spoke: SVGLineElement | null;
   parent: N | null;
   r: number;
@@ -60,6 +69,12 @@ export function createRing(opts: RingOptions): Ring {
   const svg = se("svg", { viewBox: "0 0 400 400", role: "img", "aria-label": "The coin and what is linked to it" }, "orbitsvg");
   const scene = se("g", {}, "orbscene");
   svg.append(scene);
+  // the lines stay in the SVG; the coin, the groups and the points sit above them in this layer, in the SVG's own units (scaled to its width)
+  const layer = document.createElement("div");
+  layer.className = "orblayer";
+  const stage = document.createElement("div");
+  stage.className = "orbstage";
+  stage.append(svg, layer);
   const bar = document.createElement("div");
   bar.className = "orbringbar";
   const backBtn = document.createElement("button");
@@ -72,7 +87,7 @@ export function createRing(opts: RingOptions): Ring {
   resetBtn.className = "orbmore";
   resetBtn.textContent = "Reset view";
   bar.append(backBtn, resetBtn);
-  root.append(svg, bar);
+  root.append(stage, bar);
 
   const cam = new Camera();
   cam.reduced = prefersReducedMotion();
@@ -95,11 +110,20 @@ export function createRing(opts: RingOptions): Ring {
 
   function mk(kind: Kind, world: V3, parent: N | null, r: number, open: () => void, spokeCls: string | null, g: SVGGElement): N {
     const spoke = spokeCls ? se("line", {}, spokeCls) : null;
-    return { kind, world, el: g, spoke, parent, r, open, sx: 0, sy: 0, f: 1 };
+    let tap: SVGCircleElement | null = null;
+    if (kind !== "hub") {
+      tap = se("circle", { cx: 0, cy: 0, r }, "orbtap");
+      g.prepend(tap);
+    }
+    const box = se("svg", { viewBox: "-60 -60 120 120" }, "orbn");
+    box.append(g);
+    return { kind, world, el: g, box, tap, spoke, parent, r, open, sx: 0, sy: 0, f: 1 };
   }
 
   function groupNode(g: OrbitGroup, loading: boolean): SVGGElement {
-    const node = se("g", { tabindex: 0, role: "button", "aria-label": `${g.label}: ${g.facts.length ? g.facts.length + " facts" : "not checked yet"}` }, `orbnode${g.facts.length ? "" : " empty"}`);
+    // while the file is still loading a group says so: "not checked yet" would be a statement about PINR's reading, and nothing is known yet
+    const said = loading ? "loading" : g.facts.length ? `${g.facts.length} facts` : "not checked yet";
+    const node = se("g", { tabindex: 0, role: "button", "aria-label": `${g.label}: ${said}` }, `orbnode${g.facts.length || loading ? "" : " empty"}`);
     node.setAttribute("data-group", g.id);
     node.append(se("circle", { cx: 0, cy: 0, r: 31 }, "orbdot"));
     const c = se("text", { x: 0, y: -2, "text-anchor": "middle" }, "orbcount");
@@ -170,7 +194,7 @@ export function createRing(opts: RingOptions): Ring {
     radius = r;
     scene.replaceChildren();
     for (const n of nodes) if (n.spoke) scene.append(n.spoke);
-    for (const n of nodes) scene.append(n.el);
+    layer.replaceChildren(...nodes.map((n) => n.box));
     order = "";
     sceneRev++;
     fit();
@@ -218,10 +242,27 @@ export function createRing(opts: RingOptions): Ring {
     loop.wake();
   });
 
+  // viewBox units per screen pixel, kept from the drawing's width so no frame has to measure it
+  let unitsPerPx = 1;
+  // the layout width, not the on-screen box, so an opening animation's scale is not taken for the drawing's size;
+  // the draw loop repaints only when the view moves, so a new width repaints here
+  const sized = typeof ResizeObserver === "function" ? new ResizeObserver((entries) => {
+    const w = entries[entries.length - 1]?.contentRect.width ?? 0;
+    if (w <= 0) return;
+    unitsPerPx = 400 / w;
+    layer.style.transform = `scale(${(w / 400).toFixed(4)})`;
+    paint();
+  }) : null;
+  sized?.observe(svg);
+  /** The tap radius in viewBox units: the drawn radius, or 22 screen pixels when the drawing is smaller than that. */
+  const tapRadius = (n: N, sc: number): number => Math.max(n.r * sc, TAP_HALF * unitsPerPx);
+
   function paint(): void {
     const df = diveFrame(dive, performance.now());
     const [ax, ay, az] = anchor;
-    scene.setAttribute("opacity", String(Math.max(0, df.a).toFixed(3)));
+    const a = String(Math.max(0, df.a).toFixed(3));
+    scene.setAttribute("opacity", a);
+    layer.style.opacity = a;
     for (const n of nodes) {
       const w: V3 = dive ? [ax + (n.world[0] - ax) * df.k, ay + (n.world[1] - ay) * df.k, az + (n.world[2] - az) * df.k] : n.world;
       const s = cam.project(w, 400, 400);
@@ -231,22 +272,29 @@ export function createRing(opts: RingOptions): Ring {
     }
     for (const n of nodes) {
       const sc = Math.max(0.45, Math.min(1.6, n.f));
-      n.el.setAttribute("transform", `translate(${n.sx.toFixed(1)} ${n.sy.toFixed(1)}) scale(${sc.toFixed(3)})`);
-      n.el.setAttribute("opacity", (0.28 + 0.72 * Math.max(0, Math.min(1, (n.f - 0.65) / 0.55))).toFixed(2));
+      n.box.style.transform = `translate(${n.sx.toFixed(1)}px, ${n.sy.toFixed(1)}px) scale(${sc.toFixed(3)})`;
+      n.tap?.setAttribute("r", (Math.ceil((tapRadius(n, sc) / sc) * 10) / 10).toFixed(1));
+      n.box.style.opacity = (0.28 + 0.72 * Math.max(0, Math.min(1, (n.f - 0.65) / 0.55))).toFixed(2);
       if (n.spoke && n.parent) {
         n.spoke.setAttribute("opacity", (0.2 + 0.8 * Math.max(0, Math.min(1, (Math.min(n.f, n.parent.f) - 0.6) / 0.7))).toFixed(2));
-        n.spoke.setAttribute("x1", n.parent.sx.toFixed(1));
-        n.spoke.setAttribute("y1", n.parent.sy.toFixed(1));
-        n.spoke.setAttribute("x2", n.sx.toFixed(1));
-        n.spoke.setAttribute("y2", n.sy.toFixed(1));
+        // from circle edge to circle edge, so a line never runs through a label or a count
+        const dx = n.sx - n.parent.sx;
+        const dy = n.sy - n.parent.sy;
+        const d = Math.hypot(dx, dy) || 1;
+        const r0 = Math.min(d / 2, n.parent.r * Math.max(0.45, Math.min(1.6, n.parent.f)));
+        const r1 = Math.min(d - r0, n.r * sc);
+        n.spoke.setAttribute("x1", (n.parent.sx + (dx / d) * r0).toFixed(1));
+        n.spoke.setAttribute("y1", (n.parent.sy + (dy / d) * r0).toFixed(1));
+        n.spoke.setAttribute("x2", (n.sx - (dx / d) * r1).toFixed(1));
+        n.spoke.setAttribute("y2", (n.sy - (dy / d) * r1).toFixed(1));
       }
     }
-    // far to near, so a nearer point sits over a farther one; only when the order changed
+    // far to near, so a nearer point sits over a farther one; only when the order changed, and by stacking, so nothing is put back in the page
     const by = [...nodes].sort((a, b) => a.f - b.f);
     const key = by.map((n) => nodes.indexOf(n)).join(",");
     if (key !== order) {
       order = key;
-      for (const n of by) scene.append(n.el);
+      by.forEach((n, i) => (n.box.style.zIndex = String(i + 1)));
     }
   }
 
@@ -280,16 +328,24 @@ export function createRing(opts: RingOptions): Ring {
     const k = 400 / Math.max(1, r.width);
     const x = (cx - r.left) * k;
     const y = (cy - r.top) * k;
-    let best: N | null = null;
+    // a tap on a drawn node or point picks the nearest one in depth, as before; a tap beside them picks the closest within its 44 px tap area
+    let drawn: N | null = null;
+    let near: N | null = null;
+    let nearD = Infinity;
     for (const n of nodes) {
-      if (n.kind === "hub" && !n.spoke) continue;
-      const rad = Math.max(n.r * Math.max(0.45, Math.min(1.6, n.f)), 12) + 3;
-      if (Math.hypot(n.sx - x, n.sy - y) <= rad && (!best || n.f > best.f)) best = n;
+      if (n.kind === "hub") continue;
+      const sc = Math.max(0.45, Math.min(1.6, n.f));
+      const d = Math.hypot(n.sx - x, n.sy - y);
+      if (d <= Math.max(n.r * sc, 12) + 3 && (!drawn || n.f > drawn.f)) drawn = n;
+      if (d <= tapRadius(n, sc) && d < nearD) {
+        near = n;
+        nearD = d;
+      }
     }
-    return best;
+    return drawn ?? near;
   };
   const detach = attachPointer(
-    svg,
+    stage,
     cam,
     {
       wake: () => loop.wake(),
@@ -306,6 +362,7 @@ export function createRing(opts: RingOptions): Ring {
     el: root,
     destroy() {
       loop.stop();
+      sized?.disconnect();
       detach();
       if (inGroup) {
         inGroup = null;

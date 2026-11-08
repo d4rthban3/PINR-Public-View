@@ -68,7 +68,7 @@ enum Lists {
                 lists.append(.init(id: l.id, name: l.name, kind: .own, order: "the launchpad's own order"))
                 ranks["\(lp.id):\(l.id)"] = Dictionary(l.coins.map { ($0.id.lowercased(), $0.rank) }, uniquingKeysWith: { a, _ in a })
                 for c in l.coins where tokens[c.id.lowercased()] == nil {
-                    var o: [String: Any] = ["address": c.id, "coverage": 0, "launchpad": lp.name, "note": "Not scored yet", "asOfMs": Date().timeIntervalSince1970 * 1000]
+                    var o: [String: Any] = ["address": c.id, "coverage": 0, "launchpad": lp.name, "note": "No health reading yet", "asOfMs": Date().timeIntervalSince1970 * 1000]
                     if let ch = c.chain ?? lp.chain { o["chain"] = ch }
                     if let v = c.name { o["name"] = v }
                     if let v = c.ticker { o["ticker"] = v }

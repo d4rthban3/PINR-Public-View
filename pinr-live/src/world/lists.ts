@@ -109,7 +109,7 @@ export function setOwnLists(lps: readonly OwnLaunchpad[], nowMs: number = Date.n
           score: null,
           coverage: 0,
           noScoreLabel: null,
-          note: "Not scored yet",
+          note: "No health reading yet",
           valuationUsd: c.mcapUsd,
           volume24hUsd: null,
           change24hPct: null,

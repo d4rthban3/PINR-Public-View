@@ -102,6 +102,7 @@ export function fillItem(it: Item, t: WireToken, base: number, nowMs: number): v
   it.transferFee = t.transferFee;
   //
   const label = labelShown(t.noScoreLabel) ? t.noScoreLabel : null;
+  it.label = t.noScoreLabel ?? null; // the engine's own label, kept even while it is not shown (item 114 leaves MAYHEM coins out by it)
   it.status = label ? "flag" : "ok";
   it.flagKind = (label as FlagKind | null) ?? null;
   it.base = base;
@@ -228,8 +229,7 @@ export const SURGE = { mcapPct: 8, coveragePts: 10 };
 /** What changed between two readings of one token (null = nothing worth a surge). Every line states a measured change. */
 export interface Surge {
   text: string;
-  /** 1 good news / rising (lime), 0 bad news / falling (mandarin). */
-  side: 0 | 1;
+  side: 0 | 1 | 2;
   /** How hot the tile gets, 0..0.75. */
   heat: number;
   /** Signed score change, when that is what moved. */
@@ -240,17 +240,17 @@ export function surgeFor(
   next: { score: number; coverage: number; flag: FlagKind | null; mcap: number },
 ): Surge | null {
   // Most important first: a proven flag, then the score, then the market cap, then coverage.
-  if (next.flag && next.flag !== prev.flag) return { text: `Flag raised: ${next.flag}`, side: 0, heat: 0.75, scoreDelta: 0 };
+  if (next.flag && next.flag !== prev.flag) return { text: `Flag raised: ${next.flag}`, side: 2, heat: 0.75, scoreDelta: 0 };
   if (scoreShown() && Number.isFinite(prev.score) && Number.isFinite(next.score) && next.score !== prev.score) {
     const d = next.score - prev.score;
-    return { text: `Score moved ${d > 0 ? "+" : "−"}${Math.abs(d)}`, side: d > 0 ? 1 : 0, heat: Math.min(0.75, 0.25 + Math.abs(d) / 40), scoreDelta: d };
+    return { text: `Token health moved ${d > 0 ? "+" : "−"}${Math.abs(d)}`, side: 2, heat: Math.min(0.75, 0.25 + Math.abs(d) / 40), scoreDelta: d };
   }
   if (Number.isFinite(prev.mcap) && Number.isFinite(next.mcap) && prev.mcap > 0) {
     const pct = (next.mcap / prev.mcap - 1) * 100;
-    if (Math.abs(pct) >= SURGE.mcapPct) return { text: `Market cap ${pct > 0 ? "+" : "−"}${Math.round(Math.abs(pct))}%`, side: pct > 0 ? 1 : 0, heat: Math.min(0.7, 0.3 + Math.abs(pct) / 100), scoreDelta: 0 };
+    if (Math.abs(pct) >= SURGE.mcapPct) return { text: `Market cap ${pct > 0 ? "+" : "−"}${Math.round(Math.abs(pct))}%`, side: 2, heat: Math.min(0.7, 0.3 + Math.abs(pct) / 100), scoreDelta: 0 };
   }
   const dc = next.coverage - prev.coverage;
-  if (scoreShown() && Math.abs(dc) >= SURGE.coveragePts) return { text: `Coverage ${dc > 0 ? "+" : "−"}${Math.abs(dc)}%`, side: dc > 0 ? 1 : 0, heat: 0.3, scoreDelta: 0 };
+  if (scoreShown() && Math.abs(dc) >= SURGE.coveragePts) return { text: `Coverage ${dc > 0 ? "+" : "−"}${Math.abs(dc)}%`, side: 2, heat: 0.3, scoreDelta: 0 };
   return null;
 }
 
@@ -259,8 +259,8 @@ export function tapeSurge(ev: NonNullable<WireToken["tapeEvent"]>): Surge {
   const usd = ev.usd >= 1000 ? `$${(ev.usd / 1000).toFixed(1)}K` : `$${Math.round(ev.usd)}`;
   if (ev.kind === "large_buy") return { text: `Large buy ${usd}`, side: 1, heat: Math.min(0.75, 0.35 + ev.usd / 8000), scoreDelta: 0 };
   if (ev.kind === "large_sell") return { text: `Large sell ${usd}`, side: 0, heat: Math.min(0.75, 0.35 + ev.usd / 8000), scoreDelta: 0 };
-  // The side is the one with more dollars in that minute; an older feed that names none keeps the lime it always had.
-  return { text: `Volume surge ${usd}`, side: ev.side === "sell" ? 0 : 1, heat: 0.5, scoreDelta: 0 };
+  // The side is the one with more dollars in that minute; a feed that names none gets the neutral colour, not a guessed buy.
+  return { text: `Volume surge ${usd}`, side: ev.side === "sell" ? 0 : ev.side === "buy" ? 1 : 2, heat: 0.5, scoreDelta: 0 };
 }
 
 /**
@@ -323,7 +323,8 @@ function applyOne(store: Store, byAddress: Map<string, Item>, t: WireToken, base
   const key = t.address.toLowerCase();
   let it = byAddress.get(key);
   // A coin this person has hidden never joins the store (and leaves it if it is there): it changes no score, it is only not shown here.
-  if (moderation.isHidden(key)) {
+  // Item 114: so does a MAYHEM coin while "Show Mayhem" is off (the default).
+  if (moderation.leftOut(key, t.noScoreLabel)) {
     if (it) {
       byAddress.delete(key);
       store.items.splice(store.items.indexOf(it), 1);
@@ -341,7 +342,7 @@ function applyOne(store: Store, byAddress: Map<string, Item>, t: WireToken, base
     byAddress.set(key, it);
     store.items.push(it);
     store.rev++;
-    if (!firstLoad) surge = { text: "New in the roster", side: 1, heat: 0.4, scoreDelta: 0 };
+    if (!firstLoad) surge = { text: "New in the roster", side: 2, heat: 0.4, scoreDelta: 0 };
   } else {
     const wasEarly = it.early;
     const prev = { score: it.status === "ok" && it.value !== "—" ? Number(it.value) : NaN, coverage: it.coverage, flag: it.flagKind, mcap: it.mcap };
@@ -356,12 +357,15 @@ function applyOne(store: Store, byAddress: Map<string, Item>, t: WireToken, base
   }
   // A new event from the tape (a large trade or a volume surge in the last minute) outranks a market-cap move.
   const ev = t.tapeEvent;
+  let tapeTrade: Item["noteTrade"];
   if (ev && !firstLoad && ev.atMs !== it.lastEventMs) {
     it.lastEventMs = ev.atMs;
     surge = tapeSurge(ev);
+    tapeTrade = ev.kind === "volume_surge" ? undefined : { side: ev.kind === "large_buy" ? "buy" : "sell", usd: ev.usd, atMs: ev.atMs, litAt: Date.now(), text: surge.text };
   } else if (ev && firstLoad) it.lastEventMs = ev.atMs;
   if (surge) {
     it.note = surge.text;
+    it.noteTrade = tapeTrade;
     it.noteSeq++;
     it.noteLeft = SIM.noteSeconds;
     it.spike = Math.min(0.75, Math.max(it.spike, surge.heat));
@@ -407,7 +411,7 @@ export interface StreamChanges {
   rest: Row[];
   restGone: string[];
   meta?: Record<string, unknown>;
-  trades?: { address: string; atMs: number; side: "buy" | "sell"; priceUsd: number; usd: number }[];
+  trades?: { address: string; atMs: number; side: "buy" | "sell"; priceUsd: number; usd: number; tx?: string }[];
 }
 
 /**
@@ -492,17 +496,21 @@ export class LiveFeed implements Feed {
    * Discover or the PINRscore filter. The tiles draw from the first page alone. From then on the stream keeps it current.
    */
   async find(address: string): Promise<boolean> {
+    return (await this.findWhy(address)).found;
+  }
+
+  async findWhy(address: string): Promise<{ found: boolean; notice?: string }> {
     try {
       const r = await fetch(`/api/token/find?address=${encodeURIComponent(address)}`, { cache: "no-store" });
-      if (!r.ok) return false;
-      const j = (await r.json()) as { token?: WireToken };
-      if (!j.token || typeof j.token.address !== "string") return false;
+      if (!r.ok) return { found: false };
+      const j = (await r.json()) as { token?: WireToken; hidden?: boolean; notice?: unknown };
+      if (!j.token || typeof j.token.address !== "string") return { found: false, notice: noticeOf(j) };
       //
       this.tailPages.unshift([j.token]);
       this.tailKeys.add(j.token.address.toLowerCase());
-      return true;
+      return { found: true };
     } catch {
-      return false;
+      return { found: false };
     }
   }
 
@@ -553,7 +561,7 @@ export class LiveFeed implements Feed {
   }
 
   private tradeFns: ((t: { address: string; atMs: number; side: "buy" | "sell"; usd: number; priceUsd: number }) => void)[] = [];
-  onTrade(fn: (t: { address: string; atMs: number; side: "buy" | "sell"; usd: number; priceUsd: number }) => void): void {
+  onTrade(fn: (t: { address: string; atMs: number; side: "buy" | "sell"; usd: number; priceUsd: number; tx?: string }) => void): void {
     this.tradeFns.push(fn);
   }
 
@@ -730,7 +738,7 @@ export class LiveFeed implements Feed {
     let removed = false;
     for (const it of [...store.items]) {
       const key = (it.address ?? "").toLowerCase();
-      if (moderation.isHidden(key)) {
+      if (moderation.leftOut(key, it.label)) {
         byAddress.delete(key);
         store.items.splice(store.items.indexOf(it), 1);
         removed = true;
@@ -771,4 +779,9 @@ export class LiveFeed implements Feed {
       if (Number.isFinite(it.ageMin)) it.ageMin += ddt / 60;
     }
   }
+}
+
+export function noticeOf(j: { hidden?: boolean; notice?: unknown }): string | undefined {
+  const n = j.hidden && typeof j.notice === "string" ? j.notice.trim() : "";
+  return n && n.length <= 200 ? n : undefined;
 }

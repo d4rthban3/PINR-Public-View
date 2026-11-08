@@ -9,10 +9,11 @@ import { avatarChar, liveImportance, SIM, statusLook, type Item, type LookKind, 
 import { DEFAULT_LIST, isListFilter } from "./lists";
 import { prof } from "../engine/prof";
 import { getRoster, hasSomethingToShow, selectAndRank, type Filter } from "./filters";
+import { groupOf, type Group } from "./groups";
 import { tileNumber } from "./scoretile";
 import { scoreColor } from "./scorecolor";
 import { money } from "./discoverlist";
-import { ADVICE_LINE, BY_COUNT_TITLE, SCORE_NOTICE, SCORE_TAG } from "../ui/scorenotice";
+import { ADVICE_LINE, SCORE_NOTICE, SCORE_TAG } from "../ui/scorenotice";
 import { lastTradeText, realOf, ribbonMode } from "./flow";
 import { scoredAgoShort } from "./format";
 import { feeShort } from "../../server/transferfee";
@@ -46,11 +47,18 @@ export const TEXT_MIN_PX = 10;
 export const NUM_MIN_PX = 12.5;
 export const PHONE_TEXT_MIN_PX = 12;
 export const PHONE_NUM_MIN_PX = 14;
-let vw = typeof innerWidth === "number" ? innerWidth : 1280;
-let vh = typeof innerHeight === "number" ? innerHeight : 800;
-if (typeof addEventListener === "function") addEventListener("resize", () => ((vw = innerWidth), (vh = innerHeight)));
-const textMinPx = (): number => (vw < 600 ? PHONE_TEXT_MIN_PX : TEXT_MIN_PX);
-const numMinPx = (): number => (vw < 600 ? PHONE_NUM_MIN_PX : NUM_MIN_PX);
+//
+let vw = -1;
+let vh = -1;
+const readWindow = (): void => {
+  vw = typeof innerWidth === "number" ? innerWidth : 1280;
+  vh = typeof innerHeight === "number" ? innerHeight : 800;
+};
+if (typeof addEventListener === "function") addEventListener("resize", readWindow);
+const winW = (): number => (vw < 0 ? (readWindow(), vw) : vw);
+const winH = (): number => (vh < 0 ? (readWindow(), vh) : vh);
+const textMinPx = (): number => (winW() < 600 ? PHONE_TEXT_MIN_PX : TEXT_MIN_PX);
+const numMinPx = (): number => (winW() < 600 ? PHONE_NUM_MIN_PX : NUM_MIN_PX);
 export const PAD_Y2 = [13, 20, 26, 36];
 export const FIMG = [27, 37, 48, 61];
 export const SCORE_H = [21, 29, 36, 44];
@@ -158,10 +166,12 @@ interface CardView {
 /** Event colours. Good news / buying is lime; red flags / selling is mandarin. */
 export let EV_LIME = "#d6ff3c";
 export let EV_MANDARIN = "#ff8c1a";
+export let EV_NEUTRAL = "#9aa1ae";
 onLook(() => {
   const hex = (rgb: string): string => "#" + rgb.split(",").map((n) => Number(n).toString(16).padStart(2, "0")).join("");
   EV_LIME = hex(palette().live);
   EV_MANDARIN = hex(palette().mandarin);
+  EV_NEUTRAL = hex(palette().mute);
 });
 
 /**
@@ -314,6 +324,8 @@ function setText(el: HTMLElement, text: string): void {
   if (el.textContent !== text) el.textContent = text;
 }
 
+const TILES_PER_FRAME = 10;
+
 export class CardField {
   private cards: CardView[] = [];
   private seenRev = 0;
@@ -346,6 +358,10 @@ export class CardField {
   /** CSS size of a tile = world size x m; the transform scales it back to its true on-screen size. */
   private m = 1;
   private needsLayout = true;
+  private warmed = new Set<string>();
+  private warmEl: HTMLElement | null = null;
+  private warmTimer = 0;
+  private building: { ranked: { id: number }[]; todo: number[]; byItem: Map<number, Item> } | null = null;
   private offsets = new Float32Array(0);
   private bodies: Body[] = [];
 
@@ -428,6 +444,17 @@ export class CardField {
     this.frameClip = maxBottom;
   }
 
+  private pickedGroup: Group | null = null;
+  setCoinGroup(g: Group | null): void {
+    if (g !== this.pickedGroup) {
+      this.pickedGroup = g;
+      this.needsLayout = true;
+    }
+  }
+  get currentCoinGroup(): Group | null {
+    return this.pickedGroup;
+  }
+
   setFilter(f: Filter): void {
     if (f !== this.filter) {
       this.filter = f;
@@ -475,6 +502,7 @@ export class CardField {
     // Tiles exist only for the tokens the current filter shows (see layout), never for the whole pool the app knows about.
     if (store.rev !== this.seenRev) {
       this.seenRev = store.rev;
+      this.warmGlyphs(store);
       // A token that has left the roster takes its tile away.
       const live = new Set(store.items.map((i) => i.id));
       for (const c of [...this.cards]) {
@@ -483,7 +511,7 @@ export class CardField {
         this.needsLayout = true;
       }
       // An under-full screen (first load, or a short list like New Launches) takes in what has arrived; a full one never reshuffles by itself.
-      if (this.active.length < Math.min(getRoster(), store.items.length)) this.needsLayout = true;
+      if (!this.building && this.active.length < Math.min(getRoster(), store.items.length)) this.needsLayout = true;
     }
     // While another page is shown the tiles are out of sight: nothing of theirs is worked out, and no streak is drawn for them.
     if (this.paused) {
@@ -531,11 +559,16 @@ export class CardField {
   private labelsFor(cam: Camera, lod: number): void {
     //
     // for a change of more than about 1%, and once more when the zoom stops. It reads no layout: the size comes from the camera and the tile's own box.
+    //
+    if (this.frozen && this.labKey !== "") {
+      this.labPending = true;
+      return;
+    }
     const now = performance.now();
-    const key = `${this.active.length}|${this.cellH}|${vh}`;
-    const moved = Math.abs(Math.log(cam.scale / this.labScale)) > 0.012 || lod !== this.labLod || this.epoch !== this.labEpoch || vw !== this.labW || key !== this.labKey;
+    const key = `${this.active.length}|${this.cellH}|${winH()}`;
+    const moved = Math.abs(Math.log(cam.scale / this.labScale)) > 0.012 || lod !== this.labLod || this.epoch !== this.labEpoch || winW() !== this.labW || key !== this.labKey;
     if (!moved && !this.labPending) return;
-    if (now - this.labAt < 100 && lod === this.labLod && this.epoch === this.labEpoch && vw === this.labW) {
+    if (now - this.labAt < 100 && lod === this.labLod && this.epoch === this.labEpoch && winW() === this.labW) {
       this.labPending = true;
       return;
     }
@@ -544,7 +577,7 @@ export class CardField {
     this.labScale = cam.scale;
     this.labLod = lod;
     this.labEpoch = this.epoch;
-    this.labW = vw;
+    this.labW = winW();
     this.labKey = key;
     let sw = CARD_W * cam.scale;
     let sh = this.cellH * cam.scale;
@@ -561,7 +594,7 @@ export class CardField {
     const k = sw / LOD_DESIGN_W[lod]!;
     const avail = sh / k;
     // At phone width (under 600 px, PHONE_WIDTH in grid.ts) the picture always sits above the name, as in the apps, whatever the tile size.
-    const stack = sw < STACK_BELOW_PX || vw < 600;
+    const stack = sw < STACK_BELOW_PX || winW() < 600;
     if (stack !== (this.stage.dataset.stack === "1")) this.stage.dataset.stack = stack ? "1" : "0";
     //
     // their heights are counted at the floor, so lines that no longer fit are dropped instead of printed over each other.
@@ -604,17 +637,15 @@ export class CardField {
       if (this.firstLayout) {
         // The first arrangement fades in from nothing.
         this.firstLayout = false;
-        this.layout();
+        this.layout(true);
         this.fade = 0;
         this.fadeDir = 1;
       } else this.fadeDir = -1;
     }
     if (this.fadeDir === -1) {
       this.fade = Math.max(0, this.fade - dt / 0.16);
-      if (this.fade === 0) {
-        this.layout();
-        this.fadeDir = 1;
-      }
+      // The new tiles are made a few per frame while nothing shows; the fade in starts when all are there (a swap of ninety tiles in one frame was a 1 s frame).
+      if (this.fade === 0 && this.layout(false)) this.fadeDir = 1;
     } else if (this.fadeDir === 1) {
       this.fade = Math.min(1, this.fade + dt / 0.26);
       if (this.fade === 1) this.fadeDir = 0;
@@ -675,28 +706,86 @@ export class CardField {
     this.cards.splice(this.cards.indexOf(c), 1);
   }
 
-  /** Decide every shown tile's place from the current filter's ranking. */
-  private layout(): void {
-    this.needsLayout = false;
-    this.layoutVersion++;
-    const items = this.storeRef?.items ?? [];
-    //
-    const ranked = selectAndRank(this.filter, isListFilter(this.filter) ? items : items.filter(hasSomethingToShow));
-    // Tiles for the ranked tokens only: the ones no longer shown are taken away, the newly shown ones are made.
-    const wanted = new Set(ranked.map((r) => r.id));
-    for (const c of [...this.cards]) if (!wanted.has(c.item.id)) this.dropCard(c);
-    const byItem = new Map(items.map((it) => [it.id, it]));
-    for (const r of ranked) {
-      if (this.byId.has(r.id) || this.bad.has(r.id)) continue;
-      try {
-        this.add(byItem.get(r.id)!);
-      } catch (e) {
-        // A token whose tile cannot be made is left out (once), not retried every frame, and never stops the others.
-        this.bad.add(r.id);
-        if (this.storeRef) this.storeRef.skipped++;
-        console.error("PINR: a tile could not be made and was skipped:", r.id, e);
+  /**
+   * The first time a character such as an emoji or a flag is laid out, the browser looks its font up and shapes it: a swap to a list full of new ones then
+   *
+   * once in the tile name's own font, a few per idle moment, in an element nobody sees.
+   */
+  private warmGlyphs(store: Store): void {
+    if (this.warmTimer || typeof requestIdleCallback !== "function") return;
+    const fresh: string[] = [];
+    for (const it of store.items) {
+      for (const ch of `${it.name}${it.ticker}`) {
+        if (ch.length === 1 && ch.charCodeAt(0) < 0x250) continue;
+        if (this.warmed.has(ch)) continue;
+        this.warmed.add(ch);
+        fresh.push(ch);
       }
     }
+    if (fresh.length === 0) return;
+    const run = (): void => {
+      this.warmTimer = 0;
+      const part = fresh.splice(0, 6).join(" ");
+      if (!part) return;
+      if (!this.warmEl) {
+        const w = document.createElement("div");
+        w.className = "card glyphwarm";
+        w.setAttribute("aria-hidden", "true");
+        w.style.cssText = "position:fixed;left:-9999px;top:0;width:200px;visibility:hidden;pointer-events:none;";
+        const n = document.createElement("div");
+        n.className = "name";
+        w.append(n);
+        document.body.append(w);
+        this.warmEl = n;
+      }
+      this.warmEl.textContent = part;
+      void this.warmEl.offsetWidth; // shaped here, at an idle moment
+      if (fresh.length) this.warmTimer = requestIdleCallback(run, { timeout: 2000 });
+      else this.warmEl.textContent = "";
+    };
+    this.warmTimer = requestIdleCallback(run, { timeout: 2000 });
+  }
+
+  /** Decide every shown tile's place from the current filter's ranking. Returns false while tiles are still being made (call again next frame); `all` makes them in one go. */
+  private layout(all: boolean): boolean {
+    // A new request while one is being built (another filter): start again from the new ranking.
+    if (this.building && this.needsLayout) this.building = null;
+    if (!this.building) {
+      this.needsLayout = false;
+      const allItems = this.storeRef?.items ?? [];
+      const items = this.pickedGroup ? allItems.filter((it) => groupOf(it) === this.pickedGroup) : allItems;
+      //
+      const ranked = selectAndRank(this.filter, isListFilter(this.filter) ? items : items.filter(hasSomethingToShow));
+      // Tiles for the ranked tokens only: the ones no longer shown are taken away, the newly shown ones are made.
+      const wanted = new Set(ranked.map((r) => r.id));
+      for (const c of [...this.cards]) if (!wanted.has(c.item.id)) this.dropCard(c);
+      this.building = { ranked, todo: ranked.map((r) => r.id).filter((id) => !this.byId.has(id) && !this.bad.has(id)), byItem: new Map(items.map((it) => [it.id, it])) };
+      // The old arrangement is gone from here: nothing of it is worked out while the new one is made.
+      this.active = [];
+      this.bodies = [];
+      this.offsets = new Float32Array(0);
+      this.pressedId = null;
+    }
+    const b = this.building;
+    let made = 0;
+    while (b.todo.length && (all || made < TILES_PER_FRAME)) {
+      const id = b.todo.shift()!;
+      const it = b.byItem.get(id);
+      if (!it || this.byId.has(id)) continue;
+      made++;
+      try {
+        this.add(it);
+      } catch (e) {
+        // A token whose tile cannot be made is left out (once), not retried every frame, and never stops the others.
+        this.bad.add(id);
+        if (this.storeRef) this.storeRef.skipped++;
+        console.error("PINR: a tile could not be made and was skipped:", id, e);
+      }
+    }
+    if (b.todo.length) return false;
+    this.building = null;
+    this.layoutVersion++;
+    const ranked = b.ranked;
     const rects = layoutGrid(
       ranked.map((r) => r.id).filter((id) => this.byId.has(id)),
       this.cols,
@@ -733,6 +822,7 @@ export class CardField {
     this.applySizes();
     this.bodies = this.active.map((c) => ({ cx: c.cx, cy: c.cy, w: c.w, h: c.h, grow: 1 }));
     this.offsets = new Float32Array(this.active.length * 2);
+    return true;
   }
 
   /** Sizes changed. Nothing is written here: each tile updates itself the moment it is next on screen. */
@@ -871,8 +961,8 @@ export class CardField {
         //
         const rm = ribbonMode(it, Date.now());
         const lt = rm === "real" ? lastTradeText(realOf(it.address)?.lastRealMs, Date.now()) : "";
-        c.ctagEl.title = rm === "real" ? `${SCORE_NOTICE} Each dot is one real trade${lt ? `; ${lt}` : ""}.` : rm === "counted" ? `${SCORE_NOTICE} ${BY_COUNT_TITLE} They are drawn fainter.` : SCORE_NOTICE;
-        setText(c.covWordEl, look.kind === "flag" ? "no data" : it.coverage > 0 ? "coverage" : "unscored");
+        c.ctagEl.title = rm === "real" ? `${SCORE_NOTICE} Each dot is one real trade${lt ? `; ${lt}` : ""}.` : `${SCORE_NOTICE} No trades yet.`;
+        setText(c.covWordEl, look.kind === "flag" ? "no data" : it.coverage > 0 ? "coverage" : "unread");
         if (!scoreShown()) {
           //
           // The ribbon's label stays, as the tile's hover text.
@@ -882,7 +972,7 @@ export class CardField {
           setText(c.ctagEl, "");
           c.ctagEl.title = "";
           (c.el.querySelector(".advtag") as HTMLElement | null)?.toggleAttribute("hidden", true);
-          c.el.title = rm === "real" ? `Each dot is one real trade${lt ? `; ${lt}` : ""}.` : rm === "counted" ? `${BY_COUNT_TITLE} They are drawn fainter.` : "";
+          c.el.title = rm === "real" ? `Each dot is one real trade${lt ? `; ${lt}` : ""}.` : "No trades yet.";
         }
         if (look.numeric) {
           c.shown = Number(it.value);
@@ -916,7 +1006,7 @@ export class CardField {
       const evSide = it.evSide;
       if (evSide !== c.ev) {
         c.ev = evSide;
-        const col = evSide === 1 ? EV_LIME : EV_MANDARIN;
+        const col = evSide === 1 ? EV_LIME : evSide === 0 ? EV_MANDARIN : EV_NEUTRAL;
         c.el.style.setProperty("--ev", col);
         c.glass.style.setProperty("--ev", col);
       }

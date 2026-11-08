@@ -169,7 +169,7 @@ fun GuideButton(onClick: () -> Unit, compact: Boolean = false) {
             Modifier.height(40.dp).clip(RoundedCornerShape(50)).background(Brand.fg.copy(alpha = 0.07f)).border(1.dp, Brand.fg.copy(alpha = 0.14f), RoundedCornerShape(50)).padding(horizontal = if (compact) 7.dp else 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(painterResource(if (ThemeState.light) R.drawable.pinch_banner_light else R.drawable.pinch_banner_dark), null, Modifier.height(if (compact) 24.dp else 30.dp))
+            Image(wordmarkPainter(), null, Modifier.height(if (compact) 24.dp else 30.dp))
         }
     }
 }

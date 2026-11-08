@@ -1,7 +1,7 @@
 import Foundation
 
 /// The feed server's answer to `/api/contract`: which data contract it speaks, and the four
-/// labels that always mean "no score" (pinr-live/contract/DATA-CONTRACT.md).
+/// labels that always mean "no health reading" (pinr-live/contract/DATA-CONTRACT.md).
 struct ContractInfo: Decodable, Equatable {
     let contract: String
     let noScoreLabels: [String]
@@ -13,7 +13,7 @@ enum Contract {
     static let supportedMajor = "1"
 
     /// The labels the contract names. If the feed names a different set, the app and the
-    /// feed disagree on what "no score" means, and that is a mismatch too.
+    /// feed disagree on what "no health reading" means, and that is a mismatch too.
     static let expectedNoScoreLabels: Set<String> = ["VAMP", "BOT/RUG", "MAYHEM", "HONEYPOT"]
 
     /// True when the app can show this feed's data.

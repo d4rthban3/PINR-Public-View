@@ -15,6 +15,21 @@ enum Timeframe: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+/// One point of the price line.
+struct LinePoint: Identifiable, Equatable, Sendable {
+    let time: Date
+    let price: Double
+    var id: Date { time }
+}
+
+//
+/// through each close, so a young coin's first jump shows and the line starts where the change is measured from (as on the site).
+func lineFromOpen(_ c: [Candle], bucket: Double) -> [LinePoint] {
+    guard let f = c.first else { return [] }
+    let half = max(1, bucket) / 2
+    return [LinePoint(time: f.time.addingTimeInterval(-half), price: f.open)] + c.map { LinePoint(time: $0.time, price: $0.close) }
+}
+
 struct CandleSet: Sendable, Equatable {
     //
     enum Status: String, Sendable { case ok, none, busy, error, stale }
@@ -85,8 +100,56 @@ struct ChartEvent: Decodable, Equatable, Sendable, Identifiable {
     let kind: String
     let tone: String
     let text: String
+    /// Score before and after, for score events.
+    var from: Double? = nil
+    var to: Double? = nil
     var id: String { "\(t)-\(kind)" }
     var time: Date { Date(timeIntervalSince1970: t) }
+}
+
+//
+struct EventMark: Identifiable, Equatable {
+    let time: Date
+    let price: Double
+    let tone: String
+    let text: String
+    var id: String { "\(time.timeIntervalSince1970)-\(text)" }
+
+    /// At most this many on one chart, the newest kept.
+    static let maxMarks = 8
+    private static let kindWords = ["score_up": "Token health moved up", "score_down": "Token health moved down", "flag_raised": "Flag raised",
+                                    "flag_cleared": "Flag cleared", "surge": "Surge", "verified": "Verified", "note": "Note"]
+    private static let clock: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+    private static let dated: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.dateFormat = "MMM d, h:mm a"
+        return f
+    }()
+
+    /// Each event inside the candles' span sits on the last candle at or before it, at its close, labelled with its own words, its scores
+    /// when it moved one, and its time. Events off the chart are left out; nothing is invented.
+    static func marks(_ events: [ChartEvent], candles: [Candle], bucket: TimeInterval) -> [EventMark] {
+        guard let first = candles.first?.time, let last = candles.last?.time else { return [] }
+        let end = last.addingTimeInterval(max(1, bucket))
+        // A chart of a day or less says the clock time; a longer one the date too (as the site).
+        let when = last.timeIntervalSince(first) <= 36 * 3600 ? clock : dated
+        var out: [EventMark] = []
+        var k = 0
+        for e in events where e.time >= first && e.time < end {
+            while k + 1 < candles.count && candles[k + 1].time <= e.time { k += 1 }
+            //
+            let words = (e.kind == "score_up" || e.kind == "score_down") ? (kindWords[e.kind] ?? e.kind) : (e.text.isEmpty ? (kindWords[e.kind] ?? e.kind) : e.text)
+            let scores = (e.from).flatMap { f in e.to.map { " \(Int(f)) → \(Int($0))" } } ?? ""
+            out.append(EventMark(time: candles[k].time, price: candles[k].close, tone: e.tone, text: "\(words)\(scores) · \(when.string(from: e.time))"))
+        }
+        return Array(out.suffix(maxMarks))
+    }
 }
 
 struct WireEvents: Decodable, Sendable {
@@ -107,7 +170,22 @@ struct Trade: Equatable, Sendable, Identifiable {
     let buy: Bool
     let usd: Double
     let index: Int
+    //
+    var tx: String? = nil
     var id: Int { index }
+
+    //
+    static func explorerURL(chain: String?, tx: String?) -> URL? {
+        guard let tx else { return nil }
+        let evm = tx.range(of: "^0x[0-9a-fA-F]{64}$", options: .regularExpression) != nil
+        let sol = tx.range(of: "^[1-9A-HJ-NP-Za-km-z]{64,90}$", options: .regularExpression) != nil
+        switch chain {
+        case "solana": return sol ? URL(string: "https://solscan.io/tx/\(tx)") : nil
+        case "bsc": return evm ? URL(string: "https://bscscan.com/tx/\(tx)") : nil
+        case "base": return evm ? URL(string: "https://basescan.org/tx/\(tx)") : nil
+        default: return nil
+        }
+    }
 }
 
 struct Tape: Sendable, Equatable {
@@ -118,6 +196,18 @@ struct Tape: Sendable, Equatable {
     let summary: Token.Flow?
     /// The feed has no trade list for this coin (yet, or for its chain).
     let none: Bool
+    //
+    var asOf: Date? = nil
+    var source: String? = nil
+
+    /// The receipt names where the rows were read, and says nothing about a source it was not told.
+    static func sourceLabel(_ source: String?) -> String? {
+        switch source {
+        case "pinr": "PINR's trade feed"
+        case "pumpfun": "Pump.fun"
+        default: nil
+        }
+    }
 }
 
 struct WireTape: Decodable, Sendable {
@@ -125,27 +215,33 @@ struct WireTape: Decodable, Sendable {
     let complete: Bool
     let rows: [Trade]
     let summary: WireFlow?
+    let asOf: Double?
+    let source: String?
 
-    private enum Key: String, CodingKey { case none, complete, trades, summary }
+    private enum Key: String, CodingKey { case none, complete, trades, summary, asOf, source }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
         none = (try? c.decodeIfPresent(Bool.self, forKey: .none)) ?? true
         complete = (try? c.decodeIfPresent(Bool.self, forKey: .complete)) ?? false
         summary = (try? c.decodeIfPresent(WireFlow.self, forKey: .summary)) ?? nil
+        asOf = ((try? c.decodeIfPresent(Double.self, forKey: .asOf)) ?? nil).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        source = (try? c.decodeIfPresent(String.self, forKey: .source)) ?? nil
         // Each row is read exactly once: [time, "buy" or "sell", dollars above zero]; anything else is dropped.
         let list = ((try? c.decodeIfPresent([Lenient<Row>].self, forKey: .trades)) ?? nil) ?? []
         rows = list.enumerated().compactMap { i, r in
-            r.value.map { Trade(time: Date(timeIntervalSince1970: $0.t), buy: $0.buy, usd: $0.usd, index: i) }
+            r.value.map { Trade(time: Date(timeIntervalSince1970: $0.t), buy: $0.buy, usd: $0.usd, index: i, tx: $0.tx) }
         }
     }
 
     private struct Row: Decodable {
-        let t: Double, buy: Bool, usd: Double
+        let t: Double, buy: Bool, usd: Double, tx: String?
         init(from decoder: Decoder) throws {
             var c = try decoder.unkeyedContainer()
             t = try c.decode(Double.self)
             let side = try c.decode(String.self)
             usd = try c.decode(Double.self)
+            //
+            tx = c.isAtEnd ? nil : (try? c.decode(String.self))
             guard t.isFinite, t > 0, usd.isFinite, usd > 0, side == "buy" || side == "sell" else {
                 throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "not a trade row"))
             }
@@ -160,7 +256,8 @@ struct WireTape: Decodable, Sendable {
             return Token.Flow(buy5m: f.buy5m, sell5m: f.sell5m, buy1h: f.buy1h, sell1h: f.sell1h,
                               trades5m: Int(f.n5m), trades1h: Int(f.n1h), isCount: f.basis == "count", complete: f.complete)
         }
-        return Tape(trades: rows.sorted { $0.time > $1.time }, complete: complete, summary: flow, none: none && rows.isEmpty)
+        return Tape(trades: rows.sorted { $0.time > $1.time }, complete: complete, summary: flow, none: none && rows.isEmpty,
+                    asOf: asOf.map { Date(timeIntervalSince1970: $0) }, source: source)
     }
 }
 

@@ -13,7 +13,7 @@ enum DiscoverTab: String, CaseIterable, Identifiable, Sendable {
         case .movers: "Top Movers"
         case .trending: "Trending"
         case .fresh: "Fresh Launches"
-        case .pinrscore: "PINRscore"
+        case .pinrscore: "Token health"
         case .basebnb: "Base/BNB"
         }
     }
@@ -24,7 +24,7 @@ enum DiscoverTab: String, CaseIterable, Identifiable, Sendable {
         case .movers: "Largest 24h moves"
         case .trending: "Most active right now"
         case .fresh: "Under an hour old"
-        case .pinrscore: "Scored tokens, by PINRscore"
+        case .pinrscore: "Tokens PINR has read, by token health"
         case .basebnb: "Base and BNB Chain coins, newest first"
         }
     }

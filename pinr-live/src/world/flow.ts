@@ -98,34 +98,6 @@ export function makeFlow(): Flow {
   };
 }
 
-/** Particles per ribbon-length. Fixed, so that speeding up never makes a stream look thicker. */
-export const DENSITY = 10;
-
-/**
- * Trades born per second. Proportional to speed, so the number on the ribbon at once stays the same
- * whether it drifts or rushes. `sizeK` lets a bigger tile carry proportionally more.
- */
-export function spawnRate(speed: number, sizeK = 1): number {
-  return DENSITY * speed * sizeK;
-}
-
-/** How fast particles travel (ribbon-lengths per second): calm tiles drift, hot tiles rush. */
-export function flowSpeed(imp: number, heat: number): number {
-  return 0.16 + 0.3 * imp + 0.9 * heat;
-}
-
-function spawn(f: Flow, u: number, speed: number, buyShare: number, rnd: () => number): void {
-  if (f.n >= MAX_PARTICLES) return;
-  const i = f.n++;
-  f.u[i] = u;
-  // Each trade arrives in a random one of three lanes (top, middle, bottom): together they form the stream's shape.
-  f.lane[i] = Math.floor(rnd() * 3) / 2 + (rnd() - 0.5) * 0.12;
-  f.spd[i] = speed * (0.75 + 0.5 * rnd());
-  f.side[i] = rnd() < buyShare ? 1 : 0;
-  // Mostly small and quiet, some large and solid.
-  f.size[i] = Math.pow(rnd(), 1.3);
-}
-
 /** Move every particle and retire the ones that reached "now". */
 function advance(f: Flow, dt: number): void {
   for (let i = 0; i < f.n; ) {
@@ -141,27 +113,6 @@ function advance(f: Flow, dt: number): void {
   }
 }
 
-/** Move every particle, retire the ones that reached "now", and give birth to new ones at the old edge. */
-export function stepFlow(f: Flow, dt: number, rate: number, speed: number, buyShare: number, rnd: () => number): void {
-  if (!(dt > 0)) return;
-  advance(f, dt);
-  f.acc += rate * dt;
-  while (f.acc >= 1) {
-    f.acc -= 1;
-    // Born somewhere inside this frame's travel, so births never pile up on one pixel column.
-    spawn(f, rnd() * speed * dt, speed, buyShare, rnd);
-  }
-  if (f.n >= MAX_PARTICLES) f.acc = Math.min(f.acc, 1);
-}
-
-/** Fill a freshly visible tile as if it had been streaming all along, so it never starts empty. */
-export function prewarm(f: Flow, rate: number, speed: number, buyShare: number, rnd: () => number): void {
-  f.n = 0;
-  f.acc = 0;
-  const expected = Math.min(MAX_PARTICLES, Math.round(rate / Math.max(0.05, speed)));
-  for (let i = 0; i < expected; i++) spawn(f, rnd() * 1.05, speed, buyShare, rnd);
-}
-
 // ----------------------------------------------------------------------------------------------------------------------------
 //
 // that has had one is drawn from its real trades only: a dot when a trade is heard, riding the ribbon to "now", its opacity the trade's size.
@@ -170,8 +121,6 @@ export function prewarm(f: Flow, rate: number, speed: number, buyShare: number, 
 
 /** A coin that has had a real trade in this long is drawn from real trades only; after it, back to the counted ribbon. */
 export const REAL_FOR_MS = 30 * 60_000;
-/** How much fainter a counted ribbon is drawn (a fraction of the opacity step), so a real trade is never mistaken for a count. */
-export const COUNTED_DIM = 0.45;
 /** How fast a real trade's dot crosses the ribbon (ribbon-lengths a second): about three seconds from heard to "now". */
 export const REAL_SPEED = 0.33;
 /** Heard trades kept on a coin, and for how long: enough for every drawer to see each one once. */
@@ -199,7 +148,7 @@ export interface RealTraded {
   realHeardMs?: number;
   realTrades?: HeardTrade[];
 }
-export type RibbonMode = "real" | "counted" | "none";
+export type RibbonMode = "real" | "none";
 
 /**
  * Real-trade state by address (item 57). A trade for a coin the page does not hold yet (a launch's first burst), or whose row was replaced, is kept
@@ -230,11 +179,10 @@ export function clearRealTrades(): void {
   REG.clear();
 }
 
-/** Real while the coin has had a real trade lately, else the counted ribbon where DexScreener's counts exist, else nothing (no invented motion). */
 export function ribbonMode(it: RealTraded, nowMs: number): RibbonMode {
   const st = realOf(it.address) ?? it;
   if (st.realHeardMs !== undefined && nowMs - st.realHeardMs < REAL_FOR_MS) return "real";
-  return it.hasFlow ? "counted" : "none";
+  return "none";
 }
 
 /** A lite line from a coin's real trades (their prices, oldest first), for a coin with no price series; empty with fewer than two. */

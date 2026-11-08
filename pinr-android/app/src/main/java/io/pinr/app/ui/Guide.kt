@@ -46,9 +46,9 @@ object GuideCopy {
 
     val SECTIONS = listOf(
         Section("Where everything is", listOf(
-            p("Discover", "is the search page and the market pulse: Trending, Top Movers, Fresh Launches and PINRscore lists, each card showing the coin, its market cap and all-time high, a small chart, and the score with its coverage."),
-            p("PINR", "is the home page: every scored coin as a tile, biggest and most active first, so you see what the scanner is looking at."),
-            p("PINRbot DeepScan", "is one page per coin: the live chart on top, then the dossier below it: the score, the recent trades, the checks, the facts, the written read, the coin's own links and what the posts about it say."),
+            p("Discover", "is the search page and the market pulse: Trending, Top Movers, Fresh Launches and Token health lists, each card showing the coin, its market cap and all-time high, a small chart, and its token health with its coverage."),
+            p("PINR", "is the home page: every coin PINR has read as a tile, biggest and most active first, so you see what the scanner is looking at."),
+            p("PINRbot DeepScan", "is one page per coin: the live chart on top, then the dossier below it: the token health, the recent trades, the checks, the facts, the written read, the coin's own links and what the posts about it say."),
             p("Wallet / Profile", "reads a wallet's public holdings. It cannot sign, send or approve anything."),
             p("PvP Arena", "sits above PINR: every version of a contested coin side by side, the leader first."),
             p(null, "PINR is the centre of the map. The compass in the centre of the footer opens the whole map. The PINR GUIDE button in the centre of the header opens this guide or the Whitepaper. The footer takes you to the main pages."),
@@ -56,21 +56,21 @@ object GuideCopy {
         Section("Why the site is laid out this way", listOf(
             p(null, "Every page answers one question. PINR: what is moving. Discover: where is the coin I am looking for. DeepScan: what is the evidence for this one coin. Wallet: what do I hold. Everything starts at a coin, and every figure on the way carries where it came from and when it was read, so you can check it yourself instead of trusting a label."),
         )),
-        Section("What a score is, and is not", listOf(
-            p(null, "PINR's summary, from 1 to 99, of what its checks found. Beside every score is its **coverage**: how much of the picture was actually read. A score with low coverage is an early, partial look. A high score means \"no bad pattern found\". It does not say the coin is good, and it does not say what the price will do. When PINR has not read something, the page says \"not read\" and the reason. It never fills a gap with a guess, and a dash means \"not measured\"."),
+        Section("What token health is, and is not", listOf(
+            p(null, "Token health is PINR's reading of the evidence its checks found, from 1 to 99: a reading, not a verdict. Beside every reading is its **coverage**: how much of the picture was actually read. A reading with low coverage is an early, partial look. A high reading means \"no bad pattern found\". It does not say the coin is good, and it does not say what the price will do. When PINR has not read something, the page says \"not read\" and the reason. It never fills a gap with a guess, and a dash means \"not measured\"."),
         )),
         Section("How PINR scans", listOf(
-            p(null, "New launches are watched as they appear. A coin gets scored on its own; the busiest coins are scored first, so the list you see is led by what the market is paying attention to. A first score is often chain-only and early, and it is read again as more can be read. Social posts are read separately: what a post claims is set beside what the chain shows, the lines are shown to you, and they never change a score."),
+            p(null, "New launches are watched as they appear. A coin gets its token health reading on its own; the busiest coins are read first, so the list you see is led by what the market is paying attention to. A first reading is often chain-only and early, and it is read again as more can be read. Social posts are read separately: what a post claims is set beside what the chain shows, the lines are shown to you, and they never change a token health reading."),
         )),
         Section("The data, one kind at a time", listOf(
             li("Chain facts:", "who created the coin, who paid for the launch, how many coins that wallet launched before, the pool and what it holds. Source: the public Solana chain, with a link to the explorer for each figure."),
             li("Launchpad facts:", "the coin's own record on its launchpad (its name, picture, links, market cap, all-time high). Source: the launchpad."),
             li("Market figures:", "price, liquidity, volume, pair. Source: the market data service named on each figure, with the time it was read."),
-            li("Social lines:", "what the coin's linked posts say, shown with a link to the post, never scored."),
+            li("Social lines:", "what the coin's linked posts say, shown with a link to the post, never part of token health."),
             p(null, "Every figure shows its source, how long ago it was read, and where to look. If a figure has no source, it says \"no source\" and is not used."),
         )),
         Section("What PINR does for each kind of trader", listOf(
-            p("New to this:", "start on PINR or Discover, tap a coin, read the score with its coverage first, then scroll the dossier from the top. The plain words (Strong, Fair, Weak, Clear, Not read) are there so you do not need to know what a check does."),
+            p("New to this:", "start on PINR or Discover, tap a coin, read the token health with its coverage first, then scroll the dossier from the top. The plain words (Strong, Fair, Weak, Clear, Not read) are there so you do not need to know what a check does."),
             p("Everyday trader:", "use Fresh Launches and Top Movers to find coins fast, and read the checks and the recent trades before you decide anything. Compare the market cap with the all-time high."),
             p("Experienced:", "the chart has timeframes, indicators and drawing tools, and every dossier figure links to its source so you can verify it. Use the facts list for the launcher's history."),
             p("Large holders:", "watch who launched the coin, how long it has traded and how much liquidity sits behind it, and look at the top-holder check once it is read. A coin with low coverage tells you what has not been looked at yet."),

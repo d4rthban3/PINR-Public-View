@@ -138,10 +138,14 @@ object EvidenceWords {
     fun plain(n: Double): String =
         if (n == Math.rint(n) && Math.abs(n) < 1e15) n.toLong().toString() else java.math.BigDecimal(n).setScale(8, java.math.RoundingMode.HALF_EVEN).stripTrailingZeros().toPlainString()
 
-    /** A share (0 to 1) as a percent, never rounded up to 100%; null when not a share (orbit.ts `share`). */
+    /** Below this percent a share reads "under 0.0001%" (orbit.ts `TINY_PERCENT`). */
+    const val TINY_PERCENT = 0.0001
+
+    /** A share (0 to 1) as a percent, never rounded up to 100% and never down to a made-up 0%; null when not a share (orbit.ts `share`). */
     fun share(s: Double?): String? {
         if (s == null || s < 0 || s > 1) return null
         val p = s * 100
+        if (p > 0 && p < TINY_PERCENT * (1 - 1e-9)) return "under ${plain(TINY_PERCENT)}%"
         return plain(if (p >= 1) Math.floor(p * 100) / 100 else java.math.BigDecimal(p).round(java.math.MathContext(2)).toDouble()) + "%"
     }
 

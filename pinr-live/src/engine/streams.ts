@@ -1,7 +1,7 @@
 import { onLook, palette } from "../ui/theme";
 import type { StreamTile } from "../world/cards";
 import { SIM } from "../world/model";
-import { easeLean, LEAN_TILE, leanShift, COUNTED_DIM, flowSpeed, makeFlow, prewarm, REAL_SPEED, realOf, ribbonMode, ribbonValue, spawnRate, stepFlow, stepReal, type Flow, type RibbonMode } from "../world/flow";
+import { easeLean, LEAN_TILE, leanShift, makeFlow, realOf, ribbonMode, ribbonValue, stepReal, type Flow, type RibbonMode } from "../world/flow";
 
 /**
  * Flowing streams. Drawn on one canvas that sits ABOVE the blurred glass and BELOW the text, so the
@@ -62,6 +62,9 @@ interface TileState {
   cursor: number;
   lean: number;
 }
+
+/** A ribbon that has just come to life (its coin's first trade, or the tile came back on screen) still shows the trades heard in the last moment: the trade that woke it is not lost. */
+const FIRST_LOOKBACK_MS = 3000;
 
 export class StreamLayer {
   private ctx: CanvasRenderingContext2D;
@@ -128,34 +131,17 @@ export class StreamLayer {
       //
       const mode = ribbonMode(it, nowMs);
       if (mode === "none" || it.status === "flag" || it.status === "checking") continue;
-      const real = mode === "real";
       let st = this.states.get(t.id);
-      const speed = real ? REAL_SPEED : flowSpeed(t.imp, t.heat);
-      const sizeK = Math.min(2, Math.max(0.6, Math.sqrt(t.w / 66)));
-      const rate = spawnRate(speed, sizeK);
       if (!st) {
-        st = { flow: makeFlow(), seen: this.frame, mode, cursor: nowMs, lean: leanShift(it.lean5m, LEAN_TILE) };
-        if (!real) prewarm(st.flow, rate, speed, it.buyShare, this.rnd);
+        st = { flow: makeFlow(), seen: this.frame, mode, cursor: nowMs - FIRST_LOOKBACK_MS, lean: leanShift(it.lean5m, LEAN_TILE) };
         this.states.set(t.id, st);
-      } else if (st.mode !== mode) {
-        // The coin's first real trade (or the return to counts): nothing carries over, and a real ribbon never starts with made-up dots.
-        st.flow.n = 0;
-        st.flow.acc = 0;
-        st.mode = mode;
-        st.cursor = nowMs;
-        if (!real) prewarm(st.flow, rate, speed, it.buyShare, this.rnd);
       } else if (this.frame - st.seen > 1) {
-        // Was off screen: a counted ribbon starts already flowing; a real one starts empty and takes the trades heard from now on.
-        if (real) {
-          st.flow.n = 0;
-          st.cursor = nowMs;
-        } else prewarm(st.flow, rate, speed, it.buyShare, this.rnd);
+        // Was off screen: a real ribbon starts empty and takes the trades heard from now on.
+        st.flow.n = 0;
+        st.cursor = nowMs - FIRST_LOOKBACK_MS;
       }
       st.seen = this.frame;
-      if (!this.still) {
-        if (real) st.cursor = stepReal(st.flow, dt, realOf(it.address)?.realTrades, st.cursor, this.rnd);
-        else stepFlow(st.flow, dt, rate, speed, it.buyShare, this.rnd);
-      }
+      if (!this.still) st.cursor = stepReal(st.flow, dt, realOf(it.address)?.realTrades, st.cursor, this.rnd);
 
       //
       st.lean = easeLean(st.lean, leanShift(it.lean5m, LEAN_TILE), dt);
@@ -181,13 +167,13 @@ export class StreamLayer {
         for (let i = 0; i < f.n; i++) {
           const u = f.u[i]!;
           if (u > 1) continue;
-          // A faster trade leaves a longer streak. A mix counted in trades (DexScreener's counts, not dollars) is drawn as faint dots near the line.
-          const trail = real ? 0.03 + 0.04 * f.spd[i]! : 0.002;
+          // A faster trade leaves a longer streak.
+          const trail = 0.03 + 0.04 * f.spd[i]!;
           const u0 = Math.max(0, u - trail);
           const buy = f.side[i] === 1;
-          const size = real ? f.size[i]! : f.size[i]! * COUNTED_DIM * 0.5;
+          const size = f.size[i]!;
           const j = (f.lane[i]! - 0.5) * jitter;
-          const path = this.buckets[f.side[i]!]![real ? SIZE_ALPHAS.length - 1 : 1]!;
+          const path = this.buckets[f.side[i]!]![SIZE_ALPHAS.length - 1]!;
           path.moveTo(x0 + iw * u0, this.interpY(u0) + sizeOffset(size, buy, u0) * t.h + j);
           path.lineTo(x0 + iw * u, this.interpY(u) + sizeOffset(size, buy, u) * t.h + j);
         }

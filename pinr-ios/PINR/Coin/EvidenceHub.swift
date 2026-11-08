@@ -191,10 +191,13 @@ enum EvidenceWords {
         while t.hasSuffix("0") { t.removeLast() }
         return t
     }
-    /// A share (0 to 1) as a percent, never rounded up to 100%; nil when not a share (orbit.ts `share`).
+    /// Below this percent a share reads "under 0.0001%" (orbit.ts `TINY_PERCENT`).
+    static let tinyPercent = 0.0001
+    /// A share (0 to 1) as a percent, never rounded up to 100% and never down to a made-up 0%; nil when not a share (orbit.ts `share`).
     static func share(_ s: Double?) -> String? {
         guard let s, s >= 0, s <= 1 else { return nil }
         let p = s * 100
+        if p > 0, p < tinyPercent * (1 - 1e-9) { return "under \(plain(tinyPercent))%" }
         return plain(p >= 1 ? (p * 100).rounded(.down) / 100 : Double(String(format: "%.2g", p)) ?? p) + "%"
     }
     static func duration(_ sec: Double) -> String {

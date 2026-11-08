@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The Discover room (west on the map), in the site's look: the PINR wordmark with its badge, "clean up the
+/// The Discover room (west on the map), in the site's look: the PINR wordmark, "clean up the
 /// trenches" and the blurb, the search pill, the market pulse with Refresh, the four tabs, then 30 cards. As on
 /// the site the list is a snapshot: re-ranked on a tab, a search, Refresh or pull to refresh.
 struct DiscoverRoom: View {
@@ -38,6 +38,7 @@ struct DiscoverRoom: View {
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.immediately)
         .refreshable { rerank() }
+        .remembersScroll(.discover)
         .onChange(of: store.ownRev) { rerank() }
         .onChange(of: prefs.list) { if tab != .basebnb { tab = prefs.list == nil ? .pinrscore : .list }; rerank() }
         .onChange(of: tab) { rerank(); if tab == .basebnb { Task { await store.loadChainCoins(); rerank() } } }
@@ -49,7 +50,8 @@ struct DiscoverRoom: View {
             order = [t.id]; lastKnown[t.id] = t
         }
         .onChange(of: moderation.hidden) { rerank() }
-        .onChange(of: store.all.isEmpty) { if order.isEmpty { rerank() } }
+        .onChange(of: moderation.showMayhem) { rerank() }
+        .onChange(of: store.isEmpty) { if order.isEmpty { rerank() } }
         .onChange(of: wholeSetRead) { if wholeSetRead && !rankedWholeSet { rankedWholeSet = true; rerank() } }
         .onAppear { if order.isEmpty { rerank() } }
     }
@@ -57,9 +59,6 @@ struct DiscoverRoom: View {
     private var hero: some View {
         VStack(spacing: 10) {
             WordmarkImage().scaledToFit().frame(width: 190)
-                .overlay(alignment: .bottomTrailing) {
-                    Image("pinr-chk-light").resizable().scaledToFit().frame(width: 40).offset(x: 22, y: 8)
-                }
                 .padding(.top, 24)
                 .accessibilityLabel("PINR")
             Text("clean up the trenches").font(Typo.sans(20, .semibold)).foregroundStyle(Brand.paper)
@@ -114,7 +113,7 @@ struct DiscoverRoom: View {
                     ForEach(Lists.all) { lp in
                         pill(lp.name, on: tab == .list && prefs.list?.lp == lp.id, id: "dtab-\(lp.id)") { prefs.list = Lists.first(of: lp); tab = .list }
                     }
-                    pill("PINRscore", on: tab == .pinrscore, id: "dtab-pinrscore") { prefs.filter = .pinrscore; prefs.list = nil; tab = .pinrscore }
+                    pill("Token health", on: tab == .pinrscore, id: "dtab-pinrscore") { prefs.filter = .pinrscore; prefs.list = nil; tab = .pinrscore }
                     pill("Base/BNB", on: tab == .basebnb, id: "dtab-basebnb") { tab = .basebnb }
                 }
                 .padding(.horizontal, 2)
@@ -130,7 +129,7 @@ struct DiscoverRoom: View {
                 }
                 noteRow(noteLine)
             } else {
-                noteRow("Every coin, biggest first · \(current.count)")
+                noteRow("Every coin, biggest first · \(order.count)")
             }
         }
         .padding(.horizontal, 4)
@@ -164,33 +163,35 @@ struct DiscoverRoom: View {
 
     /// The line under the tabs: the list and its order in words, then how many coins.
     private var noteLine: String {
-        if tab == .list, let c = prefs.list, let l = Lists.label(c) { return "\(l.title) · \(l.order) · \(current.count)" }
-        return "\(tab.hint) · \(current.count)"
+        if tab == .list, let c = prefs.list, let l = Lists.label(c) { return "\(l.title) · \(l.order) · \(order.count)" }
+        return "\(tab.hint) · \(order.count)"
     }
 
     @ViewBuilder private var content: some View {
-        let cards = current
         if case .mismatch = store.state {
             Notice(text: "The feed speaks a different data contract than this app. Results are not shown until the two agree.")
-        } else if cards.isEmpty {
-            if store.all.isEmpty || (tab == .basebnb && query.isEmpty && !store.chainCoinsLoaded) { ProgressView().tint(Brand.lime).padding(.top, 60) }
+        } else if order.isEmpty {
+            if store.isEmpty || (tab == .basebnb && query.isEmpty && !store.chainCoinsLoaded) { ProgressView().tint(Brand.lime).padding(.top, 60) }
             else { Notice(text: query.isEmpty ? emptyText : "No coin matches “\(query)”.", scene: "pinch-magnifier-links") }
         } else {
             let client = CoinClient(baseURL: store.baseURL, session: .shared)
             let go: (Token) -> Void = { tok in selection.id = tok.id; camera.go(.terminal) }
             switch view {
+            // The page lists ids; each card reads its own coin (REPORT-15), so a price change redraws one card, not the list.
             case .cards:
-                ForEach(cards) { t in
-                    DiscoverCard(token: t, client: client, open: go)
-                        .contextMenu { HideButton(token: t) }
+                ForEach(order, id: \.self) { id in
+                    LiveCoin(id: id, fallback: lastKnown[id]) { t in
+                        DiscoverCard(token: t, client: client, open: go)
+                            .contextMenu { HideButton(token: t) }
+                    }
                 }
             case .list:
                 LazyVStack(spacing: 6) {
-                    ForEach(cards) { t in DiscoverRow(token: t, open: go).contextMenu { HideButton(token: t) } }
+                    ForEach(order, id: \.self) { id in LiveCoin(id: id, fallback: lastKnown[id]) { t in DiscoverRow(token: t, open: go).contextMenu { HideButton(token: t) } } }
                 }
             case .gallery:
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    ForEach(cards) { t in DiscoverTile(token: t, open: go).contextMenu { HideButton(token: t) } }
+                    ForEach(order, id: \.self) { id in LiveCoin(id: id, fallback: lastKnown[id]) { t in DiscoverTile(token: t, open: go).contextMenu { HideButton(token: t) } } }
                 }
             }
         }
@@ -198,15 +199,10 @@ struct DiscoverRoom: View {
 
     private var wholeSetRead: Bool { store.restTotal.map { store.restLoaded >= $0 } ?? false }
 
-    private var current: [Token] {
-        let live = store.byId
-        return order.compactMap { live[$0] ?? lastKnown[$0] }
-    }
-
     private var emptyText: String {
         switch tab {
         case .fresh: "No coins under an hour old right now."
-        case .pinrscore: "No scored coins yet."
+        case .pinrscore: "No coins with a health reading yet."
         case .basebnb: "No Base or BNB Chain coins yet."
         case .movers, .trending, .list: "Nothing to show yet."
         }

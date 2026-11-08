@@ -68,8 +68,7 @@ import kotlinx.coroutines.launch
  * is a measured reading or a dash.
  */
 @Composable
-fun CoinPage(token: Token, all: List<Token>, client: CoinClient, watch: WatchStore, insets: PaddingValues, onOpen: (Token) -> Unit, onHide: (Token) -> Unit = {}) {
-    val scroll = rememberScrollState()
+fun CoinPage(token: Token, all: List<Token>, client: CoinClient, watch: WatchStore, insets: PaddingValues, onOpen: (Token) -> Unit, onHide: (Token) -> Unit = {}, scroll: androidx.compose.foundation.ScrollState = rememberScrollState()) {
     val scope = rememberCoroutineScope()
     var deepY by remember { mutableFloatStateOf(0f) }
     var dossier by remember(token.id) { mutableStateOf<Dossier?>(null) }
@@ -169,8 +168,23 @@ private fun TagPill(words: String, colour: Color, tag: String) {
 @Composable
 private fun TokenBar(t: Token, candles: List<io.pinr.app.feed.Candle>, asOfMs: Long?, watch: WatchStore, onHide: (Token) -> Unit) {
     var alerting by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      // The coin and its three buttons take what the price leaves; on a small phone the coin's name gives way first.
+    // On a narrow phone (under 360 dp) the price moves to its own line under the coin, so the coin's name always shows
+    // (Build Inspector, 7 Nov: at 320 dp the price and the three buttons left the name no room); wider phones keep one row.
+    val priceBlock: @Composable () -> Unit = {
+        if (t.label != NoScoreLabel.Vamp) {
+            //
+            val asOf = if (asOfMs != null && candles.isNotEmpty()) " · ${Format.asOf(asOfMs)}" else ""
+            Column(Modifier.widthIn(max = 190.dp), horizontalAlignment = Alignment.End) {
+                BasicText(Format.price(candles.lastOrNull()?.close ?: t.priceUsd) + asOf, Modifier.testTag("bar-price"), style = sans(24.sp, Brand.paper, FontWeight.Bold).copy(fontFeatureSettings = "tnum", textAlign = androidx.compose.ui.text.style.TextAlign.End), maxLines = 2)
+                io.pinr.app.feed.Ind.change24h(candles)?.takeIf { it.isFinite() }?.let { c ->
+                    // The site's line: "▲ 3.4% 24h", "▼ −3.4% 24h".
+                    BasicText("${if (c >= 0) "▲" else "▼"} ${Format.change(c).replace("+", "")} 24h$asOf", Modifier.testTag("bar-change"), style = mono(11.sp, if (c >= 0) Brand.lime else Brand.mandarin, FontWeight.Medium), maxLines = 1, softWrap = false)
+                }
+            }
+        }
+    }
+    // The coin and its three buttons take what the price leaves; on a small phone the coin's name gives way first.
+    val coinRow: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
       Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier.weight(1f, fill = false).height(46.dp).background(Brand.glass, RoundedCornerShape(50)).border(1.dp, Brand.fg.copy(alpha = 0.1f), RoundedCornerShape(50))
@@ -198,19 +212,21 @@ private fun TokenBar(t: Token, candles: List<io.pinr.app.feed.Candle>, asOfMs: L
             GlyphIcon(Glyphs.eyeOff, Brand.paper.copy(alpha = 0.85f), 18.dp)
         }
       }
+    }
+    androidx.compose.foundation.layout.BoxWithConstraints {
+    if (maxWidth < 360.dp) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                coinRow()
+            }
+            priceBlock()
+        }
+    } else Row(verticalAlignment = Alignment.CenterVertically) {
+        coinRow()
         // The price stays at the right edge in every width and is never cut.
         Spacer(Modifier.width(4.dp))
-        if (t.label != NoScoreLabel.Vamp) {
-            //
-            val asOf = if (asOfMs != null && candles.isNotEmpty()) " · ${Format.asOf(asOfMs)}" else ""
-            Column(Modifier.widthIn(max = 190.dp), horizontalAlignment = Alignment.End) {
-                BasicText(Format.price(candles.lastOrNull()?.close ?: t.priceUsd) + asOf, Modifier.testTag("bar-price"), style = sans(24.sp, Brand.paper, FontWeight.Bold).copy(fontFeatureSettings = "tnum", textAlign = androidx.compose.ui.text.style.TextAlign.End), maxLines = 2)
-                io.pinr.app.feed.Ind.change24h(candles)?.takeIf { it.isFinite() }?.let { c ->
-                    // The site's line: "▲ 3.4% 24h", "▼ −3.4% 24h".
-                    BasicText("${if (c >= 0) "▲" else "▼"} ${Format.change(c).replace("+", "")} 24h$asOf", Modifier.testTag("bar-change"), style = mono(11.sp, if (c >= 0) Brand.lime else Brand.mandarin, FontWeight.Medium), maxLines = 1, softWrap = false)
-                }
-            }
-        }
+        priceBlock()
+    }
     }
     if (alerting) AlertSheet(t, watch) { alerting = false }
 }
@@ -289,19 +305,31 @@ private fun TerminalChart(t: Token, client: CoinClient, onCandles: (List<io.pinr
         // little so the row still fits (the site's flex row on a narrow phone).
         FixedTextSize { androidx.compose.foundation.layout.BoxWithConstraints {
         val narrow = maxWidth < 380.dp
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (narrow) 6.dp else 8.dp)) {
+        // Under 380 dp the timeframes get their own full row and the chart pills the row below, so no timeframe is ever cut,
+        // whatever the chart type's label (Build Inspector, 7 Nov: "15m" read "15r" at 320 dp with "Heikin-Ashi").
+        val timeframes: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 Timeframe.entries.forEach { f ->
                     val on = f == tf
+                    // Each button's share follows its label's length, so "15m" is never cut when the chart-type pill is wide (Build Inspector, 7 Nov).
                     Box(
-                        Modifier.weight(1f).height(32.dp).background(if (on) Brand.lime else Color.Transparent, RoundedCornerShape(16.dp)).clickable { tf = f }.testTag("tf-${f.code}"),
+                        Modifier.weight(f.code.length.toFloat()).height(32.dp).background(if (on) Brand.lime else Color.Transparent, RoundedCornerShape(16.dp)).clickable { tf = f }.testTag("tf-${f.code}"),
                         contentAlignment = Alignment.Center,
                     ) { BasicText(f.code, style = sans(if (narrow) 11.sp else 12.5.sp, if (on) Brand.ink else Brand.mute, FontWeight.SemiBold), maxLines = 1, softWrap = false) }
                 }
             }
+        }
+        val menus: @Composable () -> Unit = {
             MenuPill(prefs.kind.label, false, "chart-kind", narrow) { prefs.chooseKind(ChartKind.entries[(prefs.kind.ordinal + 1) % ChartKind.entries.size]); menu = null }
             MenuPill("Indicators", prefs.ind.values.any { it.on } || menu == "ind", "indicators", narrow) { menu = if (menu == "ind") null else "ind" }
             MenuPill("View", menu == "view", "view", narrow) { menu = if (menu == "view") null else "view" }
+        }
+        if (narrow) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { timeframes() }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) { menus() }
+        } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            timeframes()
+            menus()
         }
         } }
         val s = set
@@ -362,7 +390,8 @@ private fun TerminalChart(t: Token, client: CoinClient, onCandles: (List<io.pinr
                             commit(drawings + io.pinr.app.feed.Drawing("d${System.currentTimeMillis()}", tool0, pts[0], pts.getOrNull(1), pts.getOrNull(2)))
                             tool = null
                         },
-                        modifier = Modifier.fillMaxSize().testTag("chart"),
+                        // The chart starts right of the drawing rail, so the rail never covers its first candles or the line's start (Build Inspector, 7 Nov).
+                        modifier = Modifier.fillMaxSize().padding(start = 56.dp).testTag("chart"),
                     )
                     // The rail on the chart's left, as the site's.
                     DrawRail(
@@ -380,7 +409,7 @@ private fun TerminalChart(t: Token, client: CoinClient, onCandles: (List<io.pinr
                         },
                         modifier = Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 40.dp),
                     )
-                    if (toolList) ToolList(tool, Modifier.align(Alignment.TopStart).padding(start = 56.dp, top = 40.dp)) { k -> tool = k; pending = emptyList(); toolList = false; selected = null }
+                    if (toolList) ToolList(tool, Modifier.align(Alignment.TopStart).padding(start = 60.dp, top = 40.dp)) { k -> tool = k; pending = emptyList(); toolList = false; selected = null }
                     // The hint while a tool is in hand ("Tap the first point", …), or the clear-all question.
                     val hint = tool?.let { it.hints[pending.size.coerceAtMost(it.hints.size - 1)] } ?: if (confirmClear) "Tap the bin again to remove every drawing on this coin" else null
                     hint?.let {
@@ -580,7 +609,8 @@ private fun DrawRail(
 
 @Composable
 private fun RailButton(v: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color, onClick: () -> Unit) {
-    Box(Modifier.size(40.dp).clickable(onClick = onClick).semantics { contentDescription = label }, contentAlignment = Alignment.Center) { GlyphIcon(v, tint, 20.dp) }
+    // 44 dp: the tap size every phone button keeps (Build Inspector, 7 Nov; item 17).
+    Box(Modifier.size(44.dp).clickable(onClick = onClick).semantics { contentDescription = label }, contentAlignment = Alignment.Center) { GlyphIcon(v, tint, 20.dp) }
 }
 
 /** The list of drawing tools, each with the site's name. */

@@ -54,7 +54,7 @@ fun FullCard(t: Token, time: () -> Double, insets: PaddingValues, onClose: () ->
             }
             val up = (t.change24hPct ?: 0.0) >= 0
             val rows = listOfNotNull(
-                t.score?.let { Triple("PINRscore", "$it · ${Format.coverage(t.coverage)}", null as androidx.compose.ui.graphics.Color?) },
+                t.score?.let { Triple("Token health", "$it · ${Format.coverage(t.coverage)}", null as androidx.compose.ui.graphics.Color?) },
                 Triple("Market cap", Format.usdCompact(t.valuationUsd), null),
                 Triple("All-time high", Format.usdCompact(t.athUsd), null),
                 Triple("24h change", Format.change(t.change24hPct, t.changeWindowHours), if (t.change24hPct == null) null else if (up) Brand.lime else Brand.mandarin),

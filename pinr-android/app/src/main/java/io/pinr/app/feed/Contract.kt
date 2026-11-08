@@ -4,7 +4,7 @@ import org.json.JSONObject
 
 /**
  * The feed server's answer to `/api/contract`: which data contract it speaks, and the four labels that always mean
- * "no score" (pinr-live/contract/DATA-CONTRACT.md).
+ * "no health reading" (pinr-live/contract/DATA-CONTRACT.md).
  */
 data class ContractInfo(val contract: String, val noScoreLabels: List<String>)
 
@@ -12,7 +12,7 @@ object Contract {
     /** The major contract version this app understands. The site and the iPhone app refuse any other and say "Mismatch". */
     const val SUPPORTED_MAJOR = "1"
 
-    /** The labels the contract names. A feed naming a different set disagrees on what "no score" means: a mismatch too. */
+    /** The labels the contract names. A feed naming a different set disagrees on what "no health reading" means: a mismatch too. */
     val EXPECTED_NO_SCORE_LABELS = setOf("VAMP", "BOT/RUG", "MAYHEM", "HONEYPOT")
 
     /** True when the app can show this feed's data. */

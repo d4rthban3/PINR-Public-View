@@ -7,17 +7,18 @@ import { allLaunchpads, DEFAULT_LIST, isListFilter, listKey, listLabel, parseLis
 import { ageText, money, rankDiscover, signedPct, type DiscoverTab } from "../world/discoverlist";
 import { LIME, MANDARIN, SIZE_ALPHAS, sizeOffset } from "../engine/streams";
 import { pictureOf } from "../world/cards";
-import { COUNTED_DIM, easeLean, flowSpeed, LEAN_ROW, leanShift, leanWords, lastTradeText, makeFlow, lineFromTrades, prewarm, REAL_SPEED, realOf, ribbonMode, ribbonValue, spawnRate, stepFlow, stepReal, type Flow, type RibbonMode } from "../world/flow";
+import { easeLean, LEAN_ROW, leanShift, leanWords, lastTradeText, makeFlow, lineFromTrades, realOf, ribbonMode, ribbonValue, stepReal, type Flow, type RibbonMode } from "../world/flow";
 import { createBadge, type Badge } from "./badge";
 import { flagWord } from "../world/copynote";
-import { avatarChar, BADGE_VERIFIED_SRC, liveImportance, SIM, statusLook, type Item } from "../world/model";
+import { avatarChar, liveImportance, SIM, statusLook, type Item } from "../world/model";
 import { scoreColor } from "../world/scorecolor";
-import { BY_COUNT, BY_COUNT_TITLE, SCORE_NOTICE, makeAdviceTag, makeByCount, makeScoreTag } from "./scorenotice";
+import { SCORE_NOTICE, makeAdviceTag, makeByCount, makeScoreTag } from "./scorenotice";
 import { formatAsOf, scoredAgo } from "../world/format";
 import { makeEarlyTag, makeSocialTag, setEarly, showsEarly, showsSocial } from "./earlytag";
 import { EYE_OFF_ICON } from "./hidemenu";
 import { moderation } from "../world/moderation";
 import type { Candle } from "../../server/market";
+import { lineFromOpen } from "./coinpage";
 import { tagChips } from "../world/tags";
 import { pinchScene } from "./pinch";
 
@@ -99,7 +100,7 @@ const TABS: { id: DiscoverTab; label: string; note: string }[] = [
   { id: "trending", label: "Trending", note: "Most active right now" },
   { id: "movers", label: "Top Movers", note: "Largest 24h moves" },
   { id: "fresh", label: "Fresh Launches", note: "Under an hour old" },
-  { id: "pinrscore", label: "PINRscore", note: "Scored tokens, by PINRscore" },
+  { id: "pinrscore", label: "Token health", note: "Tokens read, by token health" },
   { id: "chains", label: "Base/BNB", note: "New on Base and BNB Chain, newest first" },
 ];
 
@@ -176,12 +177,18 @@ interface Row {
   cursor: number;
   key: string;
   chartKey: string;
+  tagsKey: string;
+  picKey: string;
   cw: number;
   ch: number;
   /** The font last set on the chart's 2D context: setting ctx.font resolves style (a forced recalc), so it is set only when it changes. */
   font: string;
   /** On screen inside the list's scroller (kept by an IntersectionObserver, so no frame reads offsetTop or scrollTop). */
   vis: boolean;
+}
+
+function setText(el: HTMLElement, text: string): void {
+  if (el.textContent !== text) el.textContent = text;
 }
 
 export function createDiscover(opts: DiscoverOptions): Discover {
@@ -204,15 +211,9 @@ export function createDiscover(opts: DiscoverOptions): Discover {
   markLight.src = "/art/pinr-wordmark-light.svg";
   markLight.alt = "PINR";
   markLight.draggable = false;
-  // The wordmark wears the verified seal: the example of what a verified token's badge looks like (the blank one on every
-  // token's picture is the unverified version of it).
+  //
   const markWrap = el("div", "dmarkwrap");
-  const verified = el("img", "dmarkbadge") as HTMLImageElement;
-  verified.src = BADGE_VERIFIED_SRC;
-  verified.alt = "Verified";
-  verified.title = "Verified";
-  verified.draggable = false;
-  markWrap.append(mark, markLight, verified);
+  markWrap.append(mark, markLight);
   hero.append(
     markWrap,
     el("h1", "dtag", "clean up the trenches"),
@@ -269,7 +270,7 @@ export function createDiscover(opts: DiscoverOptions): Discover {
   const listsEl = el("div", "dtabs dlists");
   const tabBtns = new Map<string, HTMLButtonElement>();
   const OWN: { id: DiscoverTab; label: string }[] = [
-    ...(scoreShown() ? [{ id: "pinrscore" as DiscoverTab, label: "PINRscore" }] : []),
+    ...(scoreShown() ? [{ id: "pinrscore" as DiscoverTab, label: "Token health" }] : []),
     { id: "chains", label: "Base/BNB" },
   ];
   const choose = (id: DiscoverTab): void => {
@@ -473,7 +474,7 @@ export function createDiscover(opts: DiscoverOptions): Discover {
         opts.onDeepScan(row.item);
       }
     });
-    const row: Row = { root: r, item: null, name, sub, tagsEl, avatar, badge, score, covPct, covWord, earlyEl, socialEl, chainEl, adviceEl, byCountEl, ageEl, chg, money: mny, ribbon, chart, view: { tf: "Live", kind: "line" }, viewId: -1, series: null, tfBtns, kindBtn, mcVal, athVal, flow: makeFlow(), flowId: -1, seen: 0, flowMode: "none", lean: 0, cursor: 0, key: "", chartKey: "", vis: true, cw: 0, ch: 0, font: "" };
+    const row: Row = { root: r, item: null, name, sub, tagsEl, avatar, badge, score, covPct, covWord, earlyEl, socialEl, chainEl, adviceEl, byCountEl, ageEl, chg, money: mny, ribbon, chart, view: { tf: "Live", kind: "line" }, viewId: -1, series: null, tfBtns, kindBtn, mcVal, athVal, flow: makeFlow(), flowId: -1, seen: 0, flowMode: "none", lean: 0, cursor: 0, key: "", chartKey: "", tagsKey: "", picKey: "", vis: true, cw: 0, ch: 0, font: "" };
     return row;
   }
 
@@ -582,8 +583,13 @@ export function createDiscover(opts: DiscoverOptions): Discover {
       const it = r.item;
       const c = r.ribbon.getContext("2d")!;
       if (!it) continue;
-      // No streaks while they are switched off, and none for a token with neither real trades nor counts (that would be invented motion).
+      //
       const mode = ribbonMode(it, nowMs);
+      const words = leanWords(it.lean5m, mode === "real");
+      if (r.ribbon.title !== words) {
+        r.ribbon.title = words;
+        r.ribbon.setAttribute("aria-label", `Stream: ${words}`);
+      }
       if (still || mode === "none") {
         c.clearRect(0, 0, RIB_W * 2, RIB_H * 2);
         r.seen = 0;
@@ -597,29 +603,18 @@ export function createDiscover(opts: DiscoverOptions): Discover {
       // Flagged tokens stop being tracked, and one being read has nothing to show yet: no stream.
       if (it.status === "flag" || it.status === "checking") continue;
       const imp = liveImportance(it);
-      const real = mode === "real";
-      const speed = real ? REAL_SPEED : flowSpeed(imp, Math.min(1, it.spike / 0.6));
-      const rate = spawnRate(speed, 1);
       if (r.flowId !== it.id || r.seen === 0 || r.flowMode !== mode) {
         r.flowId = it.id;
         r.flowMode = mode;
-        r.cursor = nowMs;
+        r.cursor = nowMs - 3000; // the trade that woke the ribbon is not lost
         // A real ribbon never starts with made-up dots: it takes the trades heard from now on.
-        if (real) {
-          r.flow.n = 0;
-          r.flow.acc = 0;
-        } else prewarm(r.flow, rate, speed, it.buyShare, rnd);
+        r.flow.n = 0;
+        r.flow.acc = 0;
       }
       r.seen = nowSec;
-      if (real) r.cursor = stepReal(r.flow, dt, realOf(it.address)?.realTrades, r.cursor, rnd);
-      else stepFlow(r.flow, dt, rate, speed, it.buyShare, rnd);
+      r.cursor = stepReal(r.flow, dt, realOf(it.address)?.realTrades, r.cursor, rnd);
       //
       r.lean = easeLean(r.lean, leanShift(it.lean5m, LEAN_ROW), dt);
-      const words = leanWords(it.lean5m, it.hasFlow);
-      if (r.ribbon.title !== words) {
-        r.ribbon.title = words;
-        r.ribbon.setAttribute("aria-label", `Stream: ${words}`);
-      }
       const yAt = (u: number): number => RIB_H * (1 - 0.5 * (ribbonValue(it.hist, it.histAge, SIM.histEvery, imp, u) - 0.5) - r.lean);
       const f = r.flow;
       c.lineWidth = 2.5 * RIB_K;
@@ -632,7 +627,7 @@ export function createDiscover(opts: DiscoverOptions): Discover {
         for (let k = 0; k < f.n; k++) {
           const u = f.u[k]!;
           if (u > 1 || f.side[k] !== sd) continue;
-          const size = real ? f.size[k]! : f.size[k]! * COUNTED_DIM * 0.5;
+          const size = f.size[k]!;
           const u0 = Math.max(0, u - (0.03 + 0.04 * f.spd[k]!));
           const j = (f.lane[k]! - 0.5) * 3 * RIB_K;
           c.moveTo(2 + (RIB_W * 2 - 4) * u0, yAt(u0) + sizeOffset(size, sd === 1, u0) * span + j);
@@ -640,7 +635,7 @@ export function createDiscover(opts: DiscoverOptions): Discover {
           any = true;
         }
         if (!any) continue;
-        c.strokeStyle = `rgba(${sd === 1 ? LIME : MANDARIN},${real ? SIZE_ALPHAS[SIZE_ALPHAS.length - 1] : SIZE_ALPHAS[1]})`;
+        c.strokeStyle = `rgba(${sd === 1 ? LIME : MANDARIN},${SIZE_ALPHAS[SIZE_ALPHAS.length - 1]})`;
         c.stroke();
       }
     }
@@ -747,7 +742,8 @@ export function createDiscover(opts: DiscoverOptions): Discover {
       if (!res) return note("loading…");
       if ((res.status !== "ok" && res.status !== "stale") || res.candles.length < 2) return note(res.status === "busy" ? "chart not read yet" : res.status === "none" ? "no chart yet" : "no candles for this size");
       const last = res.candles.slice(-80);
-      data = last.map((k) => k[4]);
+      //
+      data = lineFromOpen(last, 60).map((p) => p.value);
       if (r.view.kind === "candles") candles = last;
       label = res.status === "stale" && res.asOfMs !== undefined ? `${r.view.tf} · ${formatAsOf(res.asOfMs)}` : `${r.view.tf} · ${res.source}`;
     }
@@ -834,50 +830,58 @@ export function createDiscover(opts: DiscoverOptions): Discover {
       const key = [ribbonMode(it, Date.now()), lastTradeText(realOf(it.address)?.lastRealMs, Date.now()), ago, it.name, it.image, look.kind, look.text, it.coverage, showsEarly(it), showsSocial(it), it.flowCount, it.change24h, it.mcap, it.ath, it.volume24h, it.changeWindowH, Math.round(it.ageMin), it.status, it.launchpad, it.quotePair, it.possibleCopy?.address, it.copyProof, (it.tags ?? []).join(","), it.createdCount].join("|");
       if (key !== r.key) {
         r.key = key;
-        r.name.textContent = it.name;
+        setText(r.name, it.name);
         // A scored token whose picture matches an earlier coin says so right here, beside its score (a warning, the score stays).
-        r.sub.textContent = `${it.ticker} · ${ageText(it.ageMin)}${it.possibleCopy ? ` · possible copy of ${it.possibleCopy.ticker}` : ""}`;
+        setText(r.sub, `${it.ticker} · ${ageText(it.ageMin)}${it.possibleCopy ? ` · possible copy of ${it.possibleCopy.ticker}` : ""}`);
         r.sub.classList.toggle("warn", !!it.possibleCopy);
-        r.tagsEl.replaceChildren(...tagChips(it.tags ?? [], it.createdCount));
-        r.avatar.replaceChildren();
-        if (it.image) r.avatar.append(pictureOf(it.image, it.name, it.address));
-        else r.avatar.textContent = avatarChar(it.name);
+        const tagsKey = `${(it.tags ?? []).join(",")}|${it.createdCount ?? ""}`;
+        if (tagsKey !== r.tagsKey) {
+          r.tagsKey = tagsKey;
+          r.tagsEl.replaceChildren(...tagChips(it.tags ?? [], it.createdCount));
+        }
+        const picKey = `${it.image ?? ""}|${it.name}|${it.address}`;
+        if (picKey !== r.picKey) {
+          r.picKey = picKey;
+          r.avatar.replaceChildren();
+          if (it.image) r.avatar.append(pictureOf(it.image, it.name, it.address));
+          else r.avatar.textContent = avatarChar(it.name);
+        }
         r.badge.set(it);
-        r.score.textContent = look.text;
+        setText(r.score, look.text);
         r.score.title = look.numeric ? SCORE_NOTICE : "";
         r.root.dataset.look = look.kind;
         r.root.dataset.flen = look.kind === "flag" ? (look.text.length <= 4 ? "s" : look.text.length <= 7 ? "m" : "l") : "";
         r.score.style.color = look.kind === "flag" ? "" : look.numeric ? scoreColor(Number(it.value)) : "";
-        // Nothing read yet is not "0% read": an unscored coin shows a dash and "unscored", as on the tiles.
+        // Nothing read yet is not "0% read": an unscored coin shows a dash and "unread", as on the tiles.
         setEarly(r.earlyEl, showsEarly(it));
         setEarly(r.socialEl, showsSocial(it));
         r.chainEl.hidden = !look.numeric;
         r.adviceEl.hidden = !look.numeric;
         r.ageEl.hidden = !look.numeric || ago === null;
-        r.ageEl.textContent = ago === null ? "" : `scored ${ago}`;
+        setText(r.ageEl, ago === null ? "" : `read ${ago}`);
         //
         const rm = ribbonMode(it, Date.now());
         const lt = rm === "real" ? lastTradeText(realOf(it.address)?.lastRealMs, Date.now()) : "";
         r.byCountEl.hidden = rm === "none" || (rm === "real" && lt === "");
-        r.byCountEl.textContent = rm === "real" ? lt : BY_COUNT;
-        r.byCountEl.title = rm === "real" ? "When the last real trade was heard from the stream. Each dot on the ribbon is one trade." : BY_COUNT_TITLE;
-        r.covPct.textContent = look.kind === "flag" ? "" : it.coverage <= 0 ? "—" : `${it.coverage}%`;
-        r.covWord.textContent = look.kind === "flag" ? flagWord(it) : it.coverage <= 0 ? "unscored" : "coverage";
+        setText(r.byCountEl, lt);
+        r.byCountEl.title = "When the last real trade was heard from the stream. Each dot on the ribbon is one trade.";
+        setText(r.covPct, look.kind === "flag" ? "" : it.coverage <= 0 ? "—" : `${it.coverage}%`);
+        setText(r.covWord, look.kind === "flag" ? flagWord(it) : it.coverage <= 0 ? "unread" : "coverage");
         if (!scoreShown()) {
           //
-          r.covPct.textContent = "";
-          r.covWord.textContent = look.kind === "flag" ? flagWord(it) : "";
+          setText(r.covPct, "");
+          setText(r.covWord, look.kind === "flag" ? flagWord(it) : "");
           setEarly(r.earlyEl, false);
           setEarly(r.socialEl, false);
           r.chainEl.hidden = true;
           r.adviceEl.hidden = true;
           r.ageEl.hidden = true;
         }
-        r.chg.textContent = signedPct(it.change24h) + (Number.isFinite(it.change24h) && Number.isFinite(it.changeWindowH) && it.changeWindowH < 23 ? ` · ${Math.max(1, Math.round(it.changeWindowH))}h` : "");
+        setText(r.chg, signedPct(it.change24h) + (Number.isFinite(it.change24h) && Number.isFinite(it.changeWindowH) && it.changeWindowH < 23 ? ` · ${Math.max(1, Math.round(it.changeWindowH))}h` : ""));
         r.chg.dataset.dir = it.change24h < 0 ? "down" : "up";
-        r.mcVal.textContent = it.status === "flag" ? "—" : money(it.mcap);
-        r.athVal.textContent = it.status !== "flag" && Number.isFinite(it.ath) && it.ath > 0 ? money(it.ath) : "—";
-        r.money.textContent = `VOL ${money(it.volume24h)}`;
+        setText(r.mcVal, it.status === "flag" ? "—" : money(it.mcap));
+        setText(r.athVal, it.status !== "flag" && Number.isFinite(it.ath) && it.ath > 0 ? money(it.ath) : "—");
+        setText(r.money, `VOL ${money(it.volume24h)}`);
       }
       if (r.viewId !== it.id) {
         // A reused row now shows another coin: its chart goes back to the live line.

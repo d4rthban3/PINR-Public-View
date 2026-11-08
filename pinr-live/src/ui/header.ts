@@ -1,11 +1,12 @@
 import { scoreShown } from "../world/hub";
 import { createLpPills } from "./lppills";
 import { allLaunchpads, DEFAULT_LIST, isListFilter, listKey, listLabel, parseList } from "../world/lists";
-import { FILTERS, getHides, getRoster, getSort, setSort, SORTS, ROSTER_DEFAULT, ROSTER_MAX, setHides, type Filter, type Hides } from "../world/filters";
+import { FILTERS, getHides, getRoster, getShowCopies, getSort, setShowCopies, setSort, SORTS, ROSTER_DEFAULT, ROSTER_MAX, setHides, type Filter, type Hides } from "../world/filters";
 
 /** The sizes offered for the PINR page roster: the base (90), a few steps and the most (200). */
 const ROSTER_CHOICES = [60, ROSTER_DEFAULT, 120, 160, ROSTER_MAX];
 import { onLook, toggleLook } from "./theme";
+import { createGroupPills, type GroupCounts, type GroupId } from "./grouppills";
 import type { PageId } from "../world/sitemap";
 import { moderation } from "../world/moderation";
 import { HIDDEN_COINS_MENU_LINE } from "./settings";
@@ -71,6 +72,7 @@ export interface PanelRow {
 
 export interface HeaderOptions {
   onFilter(f: Filter): void;
+  onGroup?(g: GroupId | null): void;
   /** A tile count chosen in the funnel panel. */
   onCols(n: number): void;
   /** A roster size chosen in the funnel panel (how many tiles the PINR page shows). */
@@ -105,6 +107,11 @@ export interface Header {
   filterButton(): HTMLButtonElement;
   filter(): Filter;
   refreshLists(): void;
+  setGroupCounts(c: GroupCounts | null): void;
+  /** Which group is picked (null: none). Marks the pills only. */
+  setGroup(g: GroupId | null): void;
+  /** True while the group row shows, so the page adds GROUP_ROW to its tile inset. */
+  groupRowShown(): boolean;
   /**
    * What the funnel can do on this page: filters work on PINR and Discover, tiles per row on PINR only. The part that does not
    * apply fades and stops responding; with neither, the whole funnel fades. Pipeline, Diagnostics and the menu always work.
@@ -208,6 +215,7 @@ export function createHeader(opts: HeaderOptions): Header {
   //
   const lpPills = createLpPills(pickLp);
   lpPills.setTail(makeFilterBtn("fbtn"));
+  const groupPills = createGroupPills((g) => opts.onGroup?.(g));
   function renderRows(): void {
     const sel = parseList(current);
     if (sel) pickedLp = sel.lp.id;
@@ -245,7 +253,7 @@ export function createHeader(opts: HeaderOptions): Header {
         row.setAttribute("role", "menuitemradio");
         row.classList.toggle("on", current === f.id);
         row.addEventListener("click", () => {
-          // Choosing PINRscore again goes back to the launchpad list.
+          // Choosing Token health again goes back to the launchpad list.
           const own = allLaunchpads().find((x) => x.id === pickedLp) ?? allLaunchpads()[0]!;
           const next: Filter = current === f.id ? listKey(own, own.lists[0]!) : f.id;
           setFilter(next);
@@ -325,6 +333,32 @@ export function createHeader(opts: HeaderOptions): Header {
     hideRows.set(k, row);
     hideSec.append(row);
   }
+  //
+  const mayhemRow = el("button", "row", `<span class="rt"><b>Show Mayhem</b><i>Coins labelled MAYHEM; left out by default</i></span><span class="tick"></span>`);
+  mayhemRow.setAttribute("role", "menuitemcheckbox");
+  mayhemRow.addEventListener("click", () => moderation.setShowMayhem(!moderation.showMayhem));
+  // Its own section, so it also shows on a phone, where the sheet leaves "Take out" off (as the apps' sheet does).
+  //
+  const copiesRow = el("button", "row", `<span class="rt"><b>Show copies</b><i>Every coin tagged Copy on the PINR page; by default only the one leading its Arena battle</i></span><span class="tick"></span>`);
+  copiesRow.setAttribute("role", "menuitemcheckbox");
+  const syncCopies = (): void => {
+    copiesRow.classList.toggle("on", getShowCopies());
+    copiesRow.setAttribute("aria-checked", String(getShowCopies()));
+  };
+  copiesRow.addEventListener("click", () => {
+    setShowCopies(!getShowCopies());
+    syncCopies();
+    opts.onHide();
+  });
+  syncCopies();
+  const mayhemSec = el("div", "psec pmayhem");
+  mayhemSec.append(mayhemRow, copiesRow);
+  const syncMayhem = (): void => {
+    mayhemRow.classList.toggle("on", moderation.showMayhem);
+    mayhemRow.setAttribute("aria-checked", String(moderation.showMayhem));
+  };
+  moderation.onChange(syncMayhem);
+  syncMayhem();
   function syncHides(): void {
     for (const [k, row] of hideRows) {
       row.classList.toggle("on", getHides()[k]);
@@ -332,7 +366,7 @@ export function createHeader(opts: HeaderOptions): Header {
     }
   }
   syncHides();
-  popFilter.append(filterSec, el("div", "sep"), sortSec, el("div", "sep psortsep"), hideSec, el("div", "sep ptakeoutsep"), tilesSec, el("div", "sep"), rosterSec);
+  popFilter.append(filterSec, el("div", "sep"), sortSec, el("div", "sep psortsep"), hideSec, mayhemSec, el("div", "sep"), tilesSec, el("div", "sep"), rosterSec);
 
   // At phone width the sheet ends as the apps' does: how many coins are hidden, and how to hide one. (On a wide
   // screen these live in Settings only; this part is shown under 600 px, see style.css.)
@@ -419,7 +453,7 @@ export function createHeader(opts: HeaderOptions): Header {
   const guide = el(
     "button",
     "guidebtn",
-    '<img class="gwm wmdark" src="/art/pinch-banner-dark.svg" alt="" draggable="false" /><img class="gwm wmlight" src="/art/pinch-banner-light.svg" alt="" draggable="false" />',
+    '<img class="gwm wmdark" src="/art/pinr-wordmark-dark.svg" alt="" draggable="false" /><img class="gwm wmlight" src="/art/pinr-wordmark-light.svg" alt="" draggable="false" />',
   ) as HTMLButtonElement;
   guide.type = "button";
   guide.setAttribute("aria-label", "PINR guide and Whitepaper");
@@ -441,7 +475,7 @@ export function createHeader(opts: HeaderOptions): Header {
   popGuide.append(guideRow, paperChoice);
   bar.append(left, guide, actions);
   // The panels live beside the bar, not inside it: a blur cannot be nested inside another blur.
-  document.body.append(bar, lpPills.el, popFilter, popMenu, pipe.pop, diag.pop, popGuide);
+  document.body.append(bar, lpPills.el, groupPills.el, popFilter, popMenu, pipe.pop, diag.pop, popGuide);
 
   let current: Filter = DEFAULT_LIST;
   //
@@ -449,6 +483,7 @@ export function createHeader(opts: HeaderOptions): Header {
   let pageNow: string = "pinr";
   function syncLabel(): void {
     lpPills.show(pageNow === "pinr");
+    groupPills.show(pageNow === "pinr");
     lpPills.render(allLaunchpads(), pickedLp, listLabel(current));
   }
   function setFilter(f: Filter): void {
@@ -456,7 +491,7 @@ export function createHeader(opts: HeaderOptions): Header {
     renderRows();
     syncLabel();
     for (const b of filterBtns) b.classList.toggle("on", f !== "all");
-    // A launchpad list keeps its own order; the Ascending/Descending choice is for the PINRscore filter only.
+    // A launchpad list keeps its own order; the Ascending/Descending choice is for the Token health filter only.
     sortSec.hidden = isListFilter(f);
     syncSort();
   }
@@ -592,6 +627,9 @@ export function createHeader(opts: HeaderOptions): Header {
     },
     filter: () => current,
     refreshLists: () => renderRows(),
+    setGroupCounts: (c) => groupPills.setCounts(c),
+    setGroup: (g) => groupPills.set(g),
+    groupRowShown: () => groupPills.visible(),
     setActive,
     setCols,
     setPage,

@@ -3,6 +3,7 @@ import { formatPrice } from "../world/format";
 import { chainName } from "../world/chainname";
 import { statusLook, type Item } from "../world/model";
 import { tagChips } from "../world/tags";
+import { highlightShown, lookupTradeLink } from "./highlightline";
 
 /**
  *
@@ -41,8 +42,20 @@ export interface CardFull {
   readonly isOpen: boolean;
   readonly item: Item | null;
   open(item: Item): void;
+  /** On a press that may become a tap: build the card and lay the tablet out (unseen) so open() only starts the move. Safe to call any time; dropped if unused. */
+  prepare(item: Item): void;
+  /** The press became a scroll or a pinch: throw the card built ahead away. */
+  cancelPrepare(): void;
   /** Close it (Back, Close, or a new page): the card returns to its tile, or fades when the tile is not drawn. Safe to call twice. */
   close(animate?: boolean): void;
+}
+
+/**
+ * A card built at press time is used again only for the same coin whose tile element is still the same one (the tile's parts object is new on every
+ * call, so the element is the stable part to compare).
+ */
+export function canReuse<T extends { item: Item; p: { el: HTMLElement } }>(ready: T | null, item: Item, el: HTMLElement | null): ready is T {
+  return ready !== null && ready.item === item && el !== null && ready.p.el === el;
 }
 
 const MS = 340;
@@ -72,6 +85,8 @@ export function createCardFull(opts: CardFullOptions): CardFull {
   let factor = 1;
   let closing = false;
   let timer = 0;
+  let ready: { item: Item; p: CardParts; hero: HTMLElement; factor: number; to: DOMRect } | null = null;
+  let readyTimer = 0;
   const still = (): boolean => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function figure(label: string, value: string, tone?: "up" | "down"): HTMLElement {
@@ -139,7 +154,7 @@ export function createCardFull(opts: CardFullOptions): CardFull {
       figure("Pair", it.quotePair || "—"),
       figure("Chain · launchpad", [it.chain ? chainName(it.chain) : "", it.launchpad ?? ""].filter(Boolean).join(" · ") || "—"),
     );
-    if (look.kind !== "hidden") figs.prepend(figure("PINRscore", look.numeric ? `${look.text} · coverage ${Math.round(it.coverage)}%` : look.text));
+    if (look.kind !== "hidden") figs.prepend(figure("Token health", look.numeric ? `${look.text} · coverage ${Math.round(it.coverage)}%` : look.text));
 
     const links = el("div", "cflinks");
     for (const [label, href] of [["X", it.links?.x], ["Telegram", it.links?.telegram], ["Website", it.links?.website]] as const) {
@@ -155,7 +170,56 @@ export function createCardFull(opts: CardFullOptions): CardFull {
     go.addEventListener("click", () => {
       if (current) opts.onDeepScan(current);
     });
-    tablet.append(close, top, ident, figs, links, go);
+    //
+    hl = el("div", "cfhl");
+    hl.hidden = true;
+    hlKey = "";
+    tablet.append(close, top, ident, hl, figs, links, go);
+  }
+
+  /** The tile's "Large buy $540" line on the opened card for as long as the tile's note lasts, linking that trade; a volume surge or any other highlight shows none. */
+  let hl: HTMLElement | null = null;
+  let hlKey = "";
+  let hlTimer = 0;
+  function refreshHighlight(): void {
+    const it = current;
+    if (!hl || !it) return;
+    const t = it.noteTrade;
+    if (!t || !highlightShown(it)) {
+      hl.hidden = true;
+      hlKey = "";
+      return;
+    }
+    const key = `${t.atMs}|${t.side}|${t.usd}`;
+    if (key === hlKey) return;
+    hlKey = key;
+    const line = hl;
+    line.dataset.side = t.side;
+    line.replaceChildren(el("span", "cfhltext", t.text));
+    line.hidden = false;
+    void lookupTradeLink(it).then((href) => {
+      if (!href || hlKey !== key || hl !== line) return;
+      const a = el("a", "cflink cfhllink", "View transaction");
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      line.append(a);
+    });
+  }
+  function startHighlight(): void {
+    window.clearInterval(hlTimer);
+    refreshHighlight();
+    hlTimer = window.setInterval(refreshHighlight, 400);
+  }
+
+  /** Throw away a card built ahead of a tap that never came. */
+  function drop(): void {
+    if (current) return;
+    ready = null;
+    root.hidden = true;
+    root.style.pointerEvents = "";
+    tablet.replaceChildren();
+    slot = null;
   }
 
   const place = (r: { left: number; top: number }, s: number): string => `translate(${r.left}px, ${r.top}px) scale(${s})`;
@@ -199,13 +263,43 @@ export function createCardFull(opts: CardFullOptions): CardFull {
     get item() {
       return current;
     },
+    prepare(item) {
+      if (current || closing) return;
+      if (ready?.item === item) return;
+      const p = opts.partsOf(item);
+      if (!p) return;
+      fill(item);
+      const h = buildHero(p);
+      // Laid out but not painted (a near-transparent layer, no pointer events, so its first paint is done before the tap): the slot's place is measured here, so the tap itself forces no layout.
+      root.style.pointerEvents = "none";
+      root.hidden = false;
+      tablet.style.opacity = "0.01";
+      tablet.style.transform = "scale(0.96)";
+      veil.style.opacity = "0.01";
+      const f = Math.max(120, Math.min(340, tablet.clientWidth - 44)) / p.w;
+      slot!.style.width = `${p.w * f}px`;
+      slot!.style.height = `${p.h * f}px`;
+      ready = { item, p, hero: h, factor: f, to: slot!.getBoundingClientRect() };
+      window.clearTimeout(readyTimer);
+      readyTimer = window.setTimeout(drop, 1500);
+    },
+    cancelPrepare() {
+      window.clearTimeout(readyTimer);
+      if (ready) drop();
+    },
     open(item) {
       if (current) return;
-      const p = opts.partsOf(item);
+      window.clearTimeout(readyTimer);
+      const pre = canReuse(ready, item, opts.partsOf(item)?.el ?? null) ? ready : null;
+      ready = null;
+      if (!pre) drop();
+      const p = pre ? pre.p : opts.partsOf(item);
       current = item;
       closing = false;
       parts = p;
-      fill(item);
+      if (!pre) fill(item);
+      startHighlight();
+      root.style.pointerEvents = "";
       root.hidden = false;
       document.addEventListener("keydown", onKey);
       if (!p) {
@@ -215,17 +309,23 @@ export function createCardFull(opts: CardFullOptions): CardFull {
         tabletFade(true, 160);
         return;
       }
-      hero = buildHero(p);
+      hero = pre ? pre.hero : buildHero(p);
       tablet.style.opacity = "0";
       tablet.style.transform = "scale(0.96)";
       veil.style.opacity = "0";
-      // The card's size on the tablet: as wide as the slot allows, up to 340 px.
-      const slotW = Math.max(120, Math.min(340, tablet.clientWidth - 44));
-      factor = slotW / p.w;
-      slot!.style.width = `${p.w * factor}px`;
-      slot!.style.height = `${p.h * factor}px`;
-      void tablet.offsetWidth; // one forced layout, before the move starts, never during it
-      const to = slot!.getBoundingClientRect();
+      let to: DOMRect;
+      if (pre) {
+        factor = pre.factor;
+        to = pre.to;
+      } else {
+        // The card's size on the tablet: as wide as the slot allows, up to 340 px.
+        const slotW = Math.max(120, Math.min(340, tablet.clientWidth - 44));
+        factor = slotW / p.w;
+        slot!.style.width = `${p.w * factor}px`;
+        slot!.style.height = `${p.h * factor}px`;
+        void tablet.offsetWidth; // one forced layout, before the move starts, never during it
+        to = slot!.getBoundingClientRect();
+      }
       const from = opts.rectOf(item);
       hero.style.position = "fixed";
       hero.style.left = "0";
@@ -253,6 +353,7 @@ export function createCardFull(opts: CardFullOptions): CardFull {
       const it = current;
       if (!it || closing) return;
       closing = true;
+      window.clearInterval(hlTimer);
       document.removeEventListener("keydown", onKey);
       window.clearTimeout(timer);
       const finish = (): void => {

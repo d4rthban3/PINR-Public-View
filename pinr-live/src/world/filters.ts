@@ -12,7 +12,7 @@ export const FILTERS: { id: Exclude<Filter, "all">; label: string; hint: string 
   { id: "trending", label: "Trending", hint: "Most active right now" },
   { id: "movers", label: "Movers", hint: "Biggest moves" },
   { id: "new", label: "New Launches", hint: "Under an hour old" },
-  { id: "pinrscore", label: "PINRscore", hint: "Real, scored projects by score" },
+  { id: "pinrscore", label: "Token health", hint: "Tokens PINR has read, by token health" },
 ];
 
 /**
@@ -134,9 +134,52 @@ export function setHides(h: Hides): void {
     /* the choice lasts until the page closes */
   }
 }
+/**
+ *
+ * battle". On the PINR page a coin with the Copy tag shows only while it leads its Arena battle (the Arena's own order), unless this person
+ * switched "Show copies" on (off by default, kept in this browser). Discover and search are not changed.
+ */
+const SHOW_COPIES_KEY = "pinr.showCopies";
+let showCopies = false;
+try {
+  showCopies = localStorage.getItem(SHOW_COPIES_KEY) === "1";
+} catch {
+  /* no storage: off */
+}
+export const getShowCopies = (): boolean => showCopies;
+export function setShowCopies(on: boolean): void {
+  showCopies = on;
+  try {
+    localStorage.setItem(SHOW_COPIES_KEY, on ? "1" : "0");
+  } catch {
+    /* the choice lasts until the page closes */
+  }
+}
+let copyWinners: ReadonlySet<string> = new Set();
+/** The coins leading their Arena battles now (lower-case addresses). Returns true when the set changed, so the PINR page can be laid out again. */
+export function setCopyWinners(winners: Iterable<string>): boolean {
+  const next = new Set([...winners].map((a) => a.toLowerCase()));
+  if (next.size === copyWinners.size && [...next].every((a) => copyWinners.has(a))) return false;
+  copyWinners = next;
+  return true;
+}
+/**
+ *
+ * its battles). An answer with under half the battles of the last good one is not taken (the page keeps its last leaders); a real shrink is
+ * believed after a few reads, as the remembered count steps down by one each read. Returns whether to take it and the count to remember.
+ */
+export function arenaAnswerTaken(lastBattles: number, battles: number): { taken: boolean; next: number } {
+  if (lastBattles > 4 && battles < lastBattles / 2) return { taken: false, next: Math.max(battles, lastBattles - 1) };
+  return { taken: true, next: battles };
+}
+
+/** Where a list is drawn: the PINR page (the copy rule applies) or Discover (it does not). */
+export type ListScope = "pinr" | "discover";
+
 /** True when the user's switches take this token out. */
-export function isHidden(it: Item, h: Hides = hides): boolean {
+export function isHidden(it: Item, h: Hides = hides, scope: ListScope = "pinr"): boolean {
   if (it.quiet === true) return true;
+  if (scope === "pinr" && !showCopies && it.tags?.includes("vamp") && !copyWinners.has((it.address ?? "").toLowerCase())) return true;
   if (h.vamp && (it.flagKind === "VAMP" || it.possibleCopy !== undefined)) return true;
   if (h.bots && (it.flagKind === "BOT/RUG" || it.flagKind === "HONEYPOT")) return true;
   if (h.serial && it.serial === true) return true;
@@ -170,8 +213,8 @@ export function hasSomethingToShow(it: Pick<Item, "image" | "chart">): boolean {
 /** How long a coin counts as just seen or just scored on the tile page (the same 24 hours as the feed server's first page). */
 export const RECENT_MS = 24 * 3600_000;
 
-export function selectAndRank(filter: Filter, all: readonly Item[], limit: number = roster, nowMs: number = Date.now(), dir: SortDir = getSort(filter)): Ranked[] {
-  const items = all.filter((it) => !isHidden(it));
+export function selectAndRank(filter: Filter, all: readonly Item[], limit: number = roster, nowMs: number = Date.now(), dir: SortDir = getSort(filter), scope: ListScope = "pinr"): Ranked[] {
+  const items = all.filter((it) => !isHidden(it, hides, scope));
   const byId = (a: Item, b: Item): number => a.id - b.id;
   //
   if (isListFilter(filter)) return byRank(rankList(filter, items, limit, nowMs).map((it) => it.id));

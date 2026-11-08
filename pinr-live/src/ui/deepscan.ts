@@ -55,7 +55,7 @@ export interface DeepScan {
   place(p: Placement | null, live: boolean): void;
   /** Keep the live parts fresh (about once a second). */
   update(nowSec: number): void;
-  liveTrade(t: { address: string; atMs: number; side: "buy" | "sell"; usd: number; priceUsd: number }): void;
+  liveTrade(t: { address: string; atMs: number; side: "buy" | "sell"; usd: number; priceUsd: number; tx?: string }): void;
   /**
    *
    * the written read, social, similar, stats and the fine print) into `host`, and and the bottom bar (24h volume, Copy contract) at the end.
@@ -212,7 +212,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
   ringArc.setAttribute("transform", "rotate(-90 60 60)");
   ringSvg.append(ringTrack, ringArc);
   const ringNum = el("div", "dsringnum");
-  const ringWord = el("div", "dsringword", "PINRscore");
+  const ringWord = el("div", "dsringword", "Token health");
   ringWrap.append(ringSvg, ringNum, ringWord);
   const scoreSide = el("div", "dsscoreside");
   const covLine = el("div", "dscov");
@@ -279,8 +279,8 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
   // --- Social (not scored): what posts say about the coin against what the dossier shows (the scanner's file; nothing here feeds a score) ---
   const scanSec = el("section", "dssec");
   //
-  scanSec.append(el("h2", "dsh", scoreShown() ? "Social (not scored)" : "Social"));
-  if (scoreShown()) scanSec.append(el("p", "dsscannote", `${SCORE_NOTICE} Nothing here moves the score.`));
+  scanSec.append(el("h2", "dsh", scoreShown() ? "Social (not part of token health)" : "Social"));
+  if (scoreShown()) scanSec.append(el("p", "dsscannote", `${SCORE_NOTICE} Nothing here moves the token health reading.`));
   const scanBody = el("div", "dsscan");
   scanSec.append(scanBody);
   page.append(hero, vampBox, possibleBox, chartWrap, ranges, scoreSec, tradesSec, checksSec, factsSec, readSec, socialSec, scanSec, similarSec, statsSec, fine);
@@ -362,14 +362,14 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     if (!it.address) {
       tradesState = "ok";
       tradesView = { none: true, trades: [], complete: false, coversFrom: null, asOf: null, summary: null };
-      return renderTrades(tradesBody, tradesState, tradesView);
+      return renderTrades(tradesBody, tradesState, tradesView, undefined, item?.chain);
     }
     const epoch = fetchEpoch;
     const got = await opts.fetchTrades(it.address);
     if (epoch !== fetchEpoch) return;
     tradesState = got ? "ok" : "error";
     tradesView = got;
-    renderTrades(tradesBody, tradesState, tradesView);
+    renderTrades(tradesBody, tradesState, tradesView, undefined, item?.chain);
   }
 
   /** The small line under a figure: its public source, how long ago it was read, and a link to look. A figure without a source says so. */
@@ -600,8 +600,8 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
       for (const h of [checksBody, factsBody, readBody, linksBody]) note(h, "No evidence file for this token yet.");
       return;
     }
-    if (d.held === "flagged") note(checksBody, "This token carries a label and no score. Its checks are not shown.");
-    else if (d.seen) note(checksBody, "Not scored yet: the checks are read when the coin is scored.");
+    if (d.held === "flagged") note(checksBody, "This token carries a label and no token health reading. Its checks are not shown.");
+    else if (d.seen) note(checksBody, "No health reading yet: the checks are read when the coin is read.");
     else if (!d.checks.length) note(checksBody, "No checks were read for this token yet.");
     else
       checksBody.replaceChildren(
@@ -727,7 +727,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     rows.push(el("p", "dssocialh", "Not measured yet"));
     const ul = el("ul", "dsnotm");
     for (const t of ["Follower counts and how old the accounts are", "How active the posts are, and who engages with them", "Callouts: other accounts or tapes mentioning the token"]) ul.append(el("li", undefined, t));
-    rows.push(ul, el("p", "dsnone", "PINR does not read these yet. They are shown as not measured, never as zero, and they do not move the score."));
+    rows.push(ul, el("p", "dsnone", "PINR does not read these yet. They are shown as not measured, never as zero, and they do not move the token health reading."));
     linksBody.replaceChildren(...rows);
   }
 
@@ -765,7 +765,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     dossierState = "loading";
     tradesState = "loading";
     tradesView = null;
-    renderTrades(tradesBody, tradesState, tradesView);
+    renderTrades(tradesBody, tradesState, tradesView, undefined, item?.chain);
     if (!vamp) {
       void loadDossier();
       void loadTrades();
@@ -902,7 +902,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
       setEarly(socialEl, showsSocial(it));
       noticeLine.hidden = !look.numeric;
       adviceLine.hidden = !look.numeric;
-      setText(covLine, flagged ? flagLine(it) : look.kind === "thin" && it.coverage <= 0 ? "Nothing measured yet" : `${it.coverage}% of the readings loaded${look.numeric && scoredAgo(it.scoredAtMs, Date.now()) ? ` · scored ${scoredAgo(it.scoredAtMs, Date.now())}` : ""}`);
+      setText(covLine, flagged ? flagLine(it) : look.kind === "thin" && it.coverage <= 0 ? "Nothing measured yet" : `${it.coverage}% of the readings loaded${look.numeric && scoredAgo(it.scoredAtMs, Date.now()) ? ` · read ${scoredAgo(it.scoredAtMs, Date.now())}` : ""}`);
       const want = it.findings.join("|");
       if (findings.dataset.k !== want) {
         findings.dataset.k = want;
@@ -993,7 +993,8 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     const f = (v: number): number => (log ? Math.log(v) : v);
     const span = Math.max(1e-12, f(hi) - f(lo));
     const padY = 22;
-    const X = (i: number): number => (w * i) / (cs.length - 1);
+    //
+    const X = (i: number): number => (w * (i + 1)) / cs.length;
     const Y = (v: number): number => h - padY - ((f(v) - f(lo)) / span) * (h - padY * 2);
     const up = cs[cs.length - 1]![4] >= open;
     const rgb = up ? LIME_RGB : MANDARIN_RGB;
@@ -1012,7 +1013,8 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     c.lineCap = "round";
     c.strokeStyle = `rgb(${rgb})`;
     c.beginPath();
-    cs.forEach((k, i) => (i === 0 ? c.moveTo(X(i), Y(k[4])) : c.lineTo(X(i), Y(k[4]))));
+    c.moveTo(0, Y(open));
+    cs.forEach((k, i) => c.lineTo(X(i), Y(k[4])));
     c.stroke();
     // the end dot, or the scrub line
     const si = scrubIndex >= 0 && scrubIndex < cs.length ? scrubIndex : cs.length - 1;
@@ -1038,7 +1040,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     const r = canvas.getBoundingClientRect();
     // clientX is in screen pixels; r.width is the on-screen width (it follows any zoom of the page), so this stays right when scaled
     const t = Math.min(1, Math.max(0, (clientX - r.left) / Math.max(1, r.width)));
-    const i = Math.round(t * (cs.length - 1));
+    const i = Math.min(cs.length - 1, Math.max(0, Math.round(t * cs.length) - 1));
     if (i !== scrubIndex) {
       scrubIndex = i;
       render();
@@ -1099,9 +1101,9 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     },
     liveTrade(t) {
       if (!item?.address || item.address.toLowerCase() !== t.address.toLowerCase() || item.flagKind === "VAMP") return;
-      // Recent trades: the trade goes on top, as the list's own rows are (seconds, side, dollars); the next full read (every 20 s) replaces the list.
-      const row: [number, "buy" | "sell", number] = [Math.floor(t.atMs / 1000), t.side, t.usd];
-      if (tradesView && !tradesView.none) tradesView = { ...tradesView, trades: [row, ...tradesView.trades].slice(0, 500) };
+      // Recent trades: the list is oldest first (the contract), so the trade joins its end, the newest, and shows on top; the next full read (every 20 s) replaces the list.
+      const row: TradesView["trades"][number] = t.tx ? [Math.floor(t.atMs / 1000), t.side, t.usd, t.tx] : [Math.floor(t.atMs / 1000), t.side, t.usd];
+      if (tradesView && !tradesView.none) tradesView = { ...tradesView, trades: [...tradesView.trades, row].slice(-500) };
       else tradesView = { none: false, trades: [row], complete: false, coversFrom: row[0], asOf: null, summary: tradesView?.summary ?? null };
       tradesState = "ok";
       // The chart: the trade grows the current candle in place (or opens the next one).
@@ -1115,7 +1117,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
       liveFrame = requestAnimationFrame(() => {
         liveFrame = 0;
         render();
-        renderTrades(tradesBody, tradesState, tradesView);
+        renderTrades(tradesBody, tradesState, tradesView, undefined, item?.chain);
       });
     },
     update(nowSec) {

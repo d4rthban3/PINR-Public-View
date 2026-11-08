@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -93,11 +94,12 @@ private fun TileBody(token: Token, width: Dp, time: () -> Double, modifier: Modi
         }
         //
         TileFacts(token, k, Modifier.weight(1f).fillMaxWidth().padding(top = (6 * k).dp))
-        RibbonView(Ribbon.of(token.flow), (2.2 * k).dp, time, tileHeight = (width.value * 1.52f).dp, modifier = Modifier.padding(top = (2 * k).dp).fillMaxWidth().height((12 * k).dp))
+        RibbonView(token, (2.2 * k).dp, time, tileHeight = (width.value * 1.52f).dp, modifier = Modifier.padding(top = (2 * k).dp).fillMaxWidth().height((12 * k).dp))
         Row(verticalAlignment = Alignment.Bottom) {
             ScoreText(token, (21 * k).sp)
-            Spacer(Modifier.weight(1f))
-            CoverageStack(token, maxOf(16.2f, 7.5f * k).sp, advice = width >= Advice.minTileWidth)
+            Spacer(Modifier.width((4 * k).dp))
+            // The coverage takes the rest of the row, so its word fits whole on a narrow tile (Build Inspector, 7 Nov: "coverag" at 320 dp).
+            CoverageStack(token, maxOf(16.2f, 7.5f * k).sp, advice = width >= Advice.minTileWidth, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -140,9 +142,9 @@ private fun TileFacts(token: Token, k: Float, modifier: Modifier) {
 private fun spoken(t: Token): String {
     val parts = mutableListOf(Format.title(t), Format.ticker(t))
     when {
-        t.label != null -> parts += "labelled ${t.label.text}, no score"
-        Format.corner(t).numeric -> parts += "PINRscore ${t.score}, coverage ${Format.coverage(t.coverage)}"
-        else -> parts += if (t.coverage > 0) "no score" else "unscored"
+        t.label != null -> parts += "labelled ${t.label.text}, no health reading"
+        Format.corner(t).numeric -> parts += "Token health ${t.score}, coverage ${Format.coverage(t.coverage)}"
+        else -> parts += if (t.coverage > 0) "no health reading" else "unread"
     }
     if (t.label == null) {
         parts += "market cap ${Format.money(t.valuationUsd)}"
@@ -205,13 +207,17 @@ fun ScoreText(token: Token, size: TextUnit) {
     }
 }
 
-/** The coverage as on the site: the figure (a dash at 0) over its word ("coverage", "unscored", or "no data" under a label). */
+/** The coverage as on the site: the figure (a dash at 0) over its word ("coverage", "unread", or "no data" under a label). */
 @Composable
-fun CoverageStack(token: Token, size: TextUnit, advice: Boolean = false) {
+fun CoverageStack(token: Token, size: TextUnit, advice: Boolean = false, modifier: Modifier = Modifier) {
     val c = Format.corner(token)
-    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(1.5.dp)) {
+    Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(1.5.dp)) {
         BasicText(c.coverage, style = mono(size, Brand.paper.copy(alpha = 0.85f), FontWeight.Medium), maxLines = 1)
-        BasicText(c.word, style = mono(size * 0.74f, Brand.mute), maxLines = 1)
+        // The word steps down in size to fit the width it has, never cut ("coverage", "unread").
+        BasicText(
+            c.word, style = mono(size * 0.74f, Brand.mute).copy(textAlign = TextAlign.End), maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = size * 0.45f, maxFontSize = size * 0.74f, stepSize = 0.25.sp),
+        )
         if (advice && c.numeric) BasicText(Advice.LINE, style = sans(size * 0.78f, Brand.mute, FontWeight.Medium), maxLines = 1)
     }
 }
@@ -231,33 +237,34 @@ fun FactRow(label: String, value: String, size: TextUnit, fit: Boolean = false) 
 }
 
 /**
- * The ribbon in the site's look (flow.ts, streams.ts): short trade streaks, lime for buys and mandarin for sells,
+ * The ribbon in the site's look (flow.ts, streams.ts): one dot for each real trade the app heard, lime for buys and mandarin for sells, riding toward
  *
- * read only while drawing, so a moving ribbon redraws without rebuilding the tile. Nothing when no trades in the hour.
+ * heard lately draws nothing, still and level. [time] is read only while drawing, so a moving ribbon redraws without rebuilding the tile.
  */
 @Composable
-fun RibbonView(ribbon: Ribbon?, dash: Dp, time: () -> Double, modifier: Modifier = Modifier, tileHeight: Dp = 130.dp, leanRange: Dp? = null) {
-    // Settings › Display › Moving streams off: no streaks, as on the site.
-    if (ribbon == null || LocalChoices.current?.streams == false) { Spacer(modifier); return }
+fun RibbonView(token: Token, dash: Dp, time: () -> Double, modifier: Modifier = Modifier, tileHeight: Dp = 130.dp, leanRange: Dp? = null) {
+    val real = LocalLiveFeed.current?.realTrades
+    // Settings › Display › Moving streams off: no dots, as on the site.
+    if (real == null || LocalChoices.current?.streams == false) { Spacer(modifier); return }
+    val ribbon = Ribbon.of(token.flow)
     //
     val lean by androidx.compose.animation.core.animateFloatAsState(ribbon.shift().toFloat(), androidx.compose.animation.core.tween(400), label = "lean")
     val range = leanRange ?: (tileHeight * Ribbon.TILE_SHARE.toFloat())
     Canvas(modifier) {
-        val t = time()
+        time() // the frame clock drives the redraw; the dots are placed by the wall clock the trades were heard on
+        val trades = real.trades(token.address)
+        if (trades.isEmpty()) return@Canvas
         val d = dash.toPx()
         val mid = size.height / 2 - lean * range.toPx()
-        for (i in 0 until Ribbon.STREAKS) {
-            val (u, buy) = ribbon.streak(i, t)
-            val (y, big) = Ribbon.lane(i)
-            val w = d * (0.5f + 0.9f * big.toFloat())
+        for (dot in Ribbon.dots(trades, System.currentTimeMillis())) {
+            val w = d * (0.5f + 0.9f * dot.size.toFloat())
             val h = d * 0.55f
             //
-            // swooping a further 60% in the last 18% of the ribbon; real trades are drawn solid, a mix counted in trades is faint and near the line.
-            val sz = if (ribbon.isCount) big * 0.25 else big
-            val top = mid + (Ribbon.sizeOffset(sz, buy, u) * tileHeight.toPx()).toFloat() + ((y - 0.5) * d * 1.2).toFloat() - h / 2
+            // swooping a further 60% in the last 18% of the ribbon.
+            val top = mid + (Ribbon.sizeOffset(dot.size, dot.buy, dot.u) * tileHeight.toPx()).toFloat() + ((dot.y - 0.5) * d * 1.2).toFloat() - h / 2
             drawRoundRect(
-                (if (buy) Brand.lime else Brand.mandarin).copy(alpha = if (ribbon.isCount) 0.35f else 0.95f),
-                topLeft = Offset((u * (size.width + w) - w).toFloat(), top),
+                (if (dot.buy) Brand.lime else Brand.mandarin).copy(alpha = 0.95f),
+                topLeft = Offset((dot.u * (size.width + w) - w).toFloat(), top),
                 size = Size(w, h), cornerRadius = CornerRadius(h / 2),
             )
         }

@@ -30,7 +30,7 @@ struct FullCard: View {
                         .accessibilityIdentifier("fullcard-close")
                     }
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                        if let s = token.score { fig("PINRscore", "\(s) · \(Format.coverage(token.coverage))") }
+                        if let s = token.score { fig("Token health", "\(s) · \(Format.coverage(token.coverage))") }
                         fig("Market cap", Format.usdCompact(token.valuationUsd))
                         fig("All-time high", Format.usdCompact(token.athUsd))
                         fig("24h change", Format.change(token.change24hPct, windowHours: token.changeWindowHours), tone: token.change24hPct.map { $0 >= 0 ? Brand.lime : Brand.mandarin })

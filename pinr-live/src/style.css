@@ -427,6 +427,10 @@ body {
 .card .top {
   min-height: 0;
 }
+/* A tile too short for its picture, name and ticker (landscape, 667 wide: 66 px tall) let the top block shrink under its own contents, so the score rose over the ticker: with nothing but name and score on it, the top block keeps its height and the score row sits below it (live read, 3 Nov). */
+#stage[data-fit="bare"] .card .top {
+  flex-shrink: 0;
+}
 
 /*
  * TYPE, BY ZOOM LEVEL (see LOD in cards.ts). Each level has its own design size, so text stays
@@ -1259,25 +1263,12 @@ body {
   display: grid;
   justify-items: center;
   gap: 10px;
-  padding: 26px 8px 22px;
+  padding: 58px 8px 22px;
   text-align: center;
 }
 .dmarkwrap {
   position: relative;
   width: min(55.5%, 217px);
-}
-.dmarkbadge {
-  /* Sits on the R's leg, halfway between centred on the leg (left edge 87.2%) and hanging off its right side (left edge 97.4%): 92.3%. The leg spans 92.7%-100% of the wordmark's width. Size is the usual 46% of the wordmark's height, and it
-     hangs 10% of that height below the baseline, as on the token pictures. */
-  position: absolute;
-  left: 92.3%;
-  bottom: 0;
-  height: 46%;
-  width: auto;
-  aspect-ratio: 1;
-  transform: translateY(21.74%);
-  pointer-events: none;
-  -webkit-user-drag: none;
 }
 .dmark {
   width: 100%;
@@ -1297,7 +1288,9 @@ body {
 }
 .dsearchwrap {
   position: sticky;
-  top: 0;
+  /* A sticky box is placed inside the scroller's padding (--clip-top + 8 px), so top:0 stuck it 45 px above the room's frame, behind the header (phone, scrolled).
+     This puts it 6 px under the frame's edge (--room-top, written by the placer). */
+  top: calc(var(--room-top, 112px) - var(--sp, calc(var(--clip-top, 70px) + 8px)) + 6px);
   z-index: 3;
   padding-bottom: 14px;
 }
@@ -1308,7 +1301,8 @@ body {
   height: 54px;
   padding: 0 16px;
   border-radius: 27px;
-  background: rgba(var(--glass-rgb), 0.8);
+  /* Solid where it sticks, so the cards scrolling under it do not show through (the glass tint over the panel colour). */
+  background: linear-gradient(rgba(var(--glass-rgb), 0.8), rgba(var(--glass-rgb), 0.8)), rgb(var(--panel-rgb));
   box-shadow:
     inset 1px 1px 0 rgba(var(--fg-rgb), 0.16),
     inset -1px -1px 0 rgba(var(--fg-rgb), 0.06),
@@ -1337,6 +1331,12 @@ body {
 .dinput::placeholder {
   color: var(--mute);
   opacity: 0.8;
+}
+@media (max-width: 349px) {
+  /* 320 wide: "Ticker, name, CA, X, social, or website" was cut at "o..."; the same words a little smaller fit whole (live read, 3 Nov). */
+  .dinput {
+    font-size: 13.5px;
+  }
 }
 .dpulse {
   display: grid;
@@ -3090,7 +3090,7 @@ body {
 }
 .trrow {
   display: grid;
-  grid-template-columns: 72px 44px 1fr 34px;
+  grid-template-columns: 72px 44px 1fr 34px 28px;
   align-items: center;
   gap: 6px;
   min-height: 28px;
@@ -3834,6 +3834,15 @@ a.dsvampopen {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#hidenote.sticky {
+  min-height: 44px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+#hidenote.sticky span {
+  white-space: normal;
+  overflow: visible;
+}
 #hidenote button,
 .sbtn {
   all: unset;
@@ -4280,6 +4289,43 @@ a.dsvampopen {
 .cpplot {
   transition: opacity 0.25s ease;
 }
+.trtx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  color: var(--mute);
+  text-decoration: none;
+  font-size: 13px;
+}
+.trtx:hover {
+  color: var(--live);
+}
+.cpevlayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  contain: layout paint;
+}
+.cpevlabel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font: 500 10.5px/1.25 var(--mono);
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(var(--bg-rgb, 10, 10, 14), 0.72);
+  /*
+     chart the words take a lighter tint of the same violet (a quarter towards white, about 6 to 1 on the dark backing); the dots stay deep violet. */
+  color: rgb(145, 122, 252);
+}
+:root[data-theme="light"] .cpevlabel {
+  background: rgba(255, 255, 255, 0.78);
+  color: rgb(108, 77, 251);
+}
 .cpcap {
   min-height: 14px;
   margin-top: 6px;
@@ -4337,7 +4383,8 @@ a.dsvampopen {
   font: 500 14px/1.25 var(--font);
   color: var(--text);
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  /* Item 17 (320 px): wrap between words; only a word wider than its column (a long address) is broken. */
+  overflow-wrap: break-word;
 }
 .cpmini {
   position: sticky;
@@ -4477,13 +4524,39 @@ a.dsvampopen {
   gap: 8px;
   min-height: 28px;
 }
-.orbitsvg {
+.orbstage {
+  position: relative;
+  width: min(100%, 360px);
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  width: min(100%, 360px);
+}
+.orbitsvg {
+  display: block;
+  width: 100%;
   height: auto;
   overflow: visible;
+}
+/* the coin, groups and points above the lines, in the drawing's own 400-unit square scaled to its width (orbitring.ts) */
+.orblayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 400px;
+  height: 400px;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.orbn {
+  position: absolute;
+  left: -60px;
+  top: -60px;
+  width: 120px;
+  height: 120px;
+  overflow: visible;
+}
+.orbn > g {
+  pointer-events: auto;
 }
 .orbspoke {
   stroke: rgba(var(--fg-rgb), 0.18);
@@ -4524,6 +4597,11 @@ a.dsvampopen {
 .orbpt {
   cursor: pointer;
   outline: none;
+}
+/* the 44 px tap area under each node and point: never seen, only touched */
+.orbtap {
+  fill: transparent;
+  stroke: none;
 }
 .orbpt:hover .orbpdot,
 .orbpt:focus-visible .orbpdot {
@@ -5439,6 +5517,14 @@ a.dsvampopen {
 
 .arsearch {
   padding-bottom: 12px;
+  /* The Arena's scroller pads its top 48 px deeper than Discover's (clip-top + 56, not + 8), so Discover's sticky offset left the bar 54 px below the frame
+     with cards scrolling by above it. This one sticks at the frame's edge (--room-top) and is solid, so nothing reads through it (Build Inspector, 7 Nov). */
+  top: calc(var(--room-top, 112px) - var(--clip-top, 70px) - 56px);
+  padding-top: 6px;
+  background: rgb(var(--panel-rgb));
+}
+.arsearch .dsearch {
+  background: linear-gradient(rgba(var(--glass-rgb), 0.8), rgba(var(--glass-rgb), 0.8)), rgb(var(--panel-rgb));
 }
 .arfound {
   margin: 0 0 10px;
@@ -5530,6 +5616,16 @@ a.dsvampopen {
   min-width: 0;
   font-size: 12px;
   line-height: 1.3;
+}
+@media (max-width: 520px) {
+  .dbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .dbar .dnote {
+    flex: 1 0 100%;
+    padding: 0 6px;
+  }
 }
 .dviews {
   flex: none;
@@ -5725,6 +5821,26 @@ a.dsvampopen {
     display: none;
   }
 }
+@container dlist (max-width: 420px) {
+  /* A phone: the name, the tags and "$TICKER · age" take the row's whole width beside the score, and the change figure sits on its own line under them, so none of the three runs under another (live reads, 3 Nov: at 320 the figure covered the ticker). */
+  .dlist[data-view="list"] .drow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "ident score"
+      "chg chg";
+    row-gap: 4px;
+  }
+  .dlist[data-view="list"] .dbot .dchg {
+    justify-self: start;
+    text-align: left;
+    font-size: 13px;
+    white-space: nowrap;
+    padding-left: 50px;
+  }
+  .dlist[data-view="list"] .dscore {
+    min-width: 56px;
+  }
+}
 
 /* Gallery: tiles. */
 .dlist[data-view="gallery"] {
@@ -5892,6 +6008,25 @@ a.dsvampopen {
 .cffig b.down {
   color: var(--mandarin);
 }
+.cfhl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.cfhl[hidden] {
+  display: none;
+}
+.cfhltext {
+  font: 600 15px/1.2 var(--mono);
+  color: var(--mute);
+}
+.cfhl[data-side="buy"] .cfhltext {
+  color: var(--live);
+}
+.cfhl[data-side="sell"] .cfhltext {
+  color: var(--mandarin);
+}
 .cflinks {
   display: flex;
   flex-wrap: wrap;
@@ -5947,11 +6082,13 @@ a.dsvampopen {
 .pop .row {
   min-height: 48px;
 }
+.argh {
+  flex-wrap: wrap;
+}
 .arghv {
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .dtab {
@@ -6076,7 +6213,9 @@ html.noscore #stage[data-lod="1"] .card .n {
 }
 .dlist[data-view="list"] .dident {
   min-width: 0;
-  overflow: hidden;
+  /* Clipped sideways so the ticker never runs under the change figure, open downwards so the chain and launchpad badge, which hangs below the picture, is not cut flat (live reads, 3 Nov). */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 .dlist[data-view="list"] .drow .idtxt {
   min-width: 0;
@@ -6087,7 +6226,8 @@ html.noscore #stage[data-lod="1"] .card .n {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  /* Between words first; a word is broken only when it is wider than the whole line (live read, 3 Nov: "ShadowPrivacy" was broken mid-word beside the figure). */
+  overflow-wrap: break-word;
 }
 .dlist[data-view="list"] .drow .tick {
   white-space: normal;
@@ -6095,7 +6235,21 @@ html.noscore #stage[data-lod="1"] .card .n {
   text-overflow: clip;
 }
 .dlist[data-view="gallery"] {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  /* 136, not 150: at 320 wide the list is 288 across, and two 150s do not fit, so the gallery read as one tile per row (live read, 3 Nov). */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 136px), 1fr));
+}
+@container dlist (max-width: 340px) {
+  /* Two gallery tiles at 320 wide are about 138 px each: the market cap's figure (the label shown in full) is set a little smaller so it is not cut to "$6…". */
+  .dlist[data-view="gallery"] .dscore {
+    min-width: 28px;
+  }
+  .dlist[data-view="gallery"] .dfig {
+    gap: 0.4em;
+  }
+  .dlist[data-view="gallery"] .dfig b,
+  .dlist[data-view="gallery"] .dfig i {
+    font-size: 11px;
+  }
 }
 
 @media (max-width: 599px) {
@@ -6217,18 +6371,91 @@ html.noscore #stage[data-lod="1"] .card .n {
   }
 }
 
-/* Item 11: the pair and launchpad badge hangs below the coin page's picture instead of sitting across its edge. */
+/* Item 11: the pair and launchpad badge hangs below the coin page's picture instead of sitting across its edge
+   (the badge is 48% of the picture tall, so -52% puts its top just under the picture's lower edge). */
 .cpidrow .avwrap {
-  margin-bottom: 12px;
+  margin-bottom: 20px;
 }
 .cpidrow .pbadge {
   right: -34%;
-  bottom: -30%;
+  bottom: -52%;
+}
+/* Phone defect 11 (and every width): the room's frame starts lower than the header strip, so the coin's name block and the
+   sticky name line under it were cut by the frame's top edge (6 to 12 px). They now start at the frame's edge (--room-top,
+   written by the placer); the hidden name line (34 px) waits just above it until the page is scrolled. */
+.cproot {
+  padding-top: calc(var(--room-top, 106px) - 34px);
+}
+/* A sticky line is placed inside the scroller's padding, which ends 34 px above the frame: 34 px down is the frame's edge. */
+.cproot .cpmini {
+  top: 34px;
+  background: rgb(var(--panel-rgb)); /* solid: the lines scrolling under it no longer show through */
+}
+/* One line on a phone: the price keeps its width; a long name or change ends in "…", and the name always keeps a few letters. */
+.cproot .cpminiprice {
+  flex: none;
+  white-space: nowrap;
+}
+.cproot .cpmininame,
+.cproot .cpminichange {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cpminipct {
+  display: none;
+  flex: none;
+  white-space: nowrap;
+  font: 600 12.5px/1.2 var(--font);
+  color: var(--cpc);
+}
+@media (max-width: 600px) {
+  .cproot .cpminichange {
+    display: none;
+  }
+  .cproot .cpminipct {
+    display: inline;
+  }
+}
+.cproot .cpmininame {
+  flex: 0 4 auto; /* the name gives way first, so the change keeps its percentage where it can */
+  min-width: min(4em, max-content);
+}
+/* Phone defect 9: on a touch screen each trade row is 44 px tall and its transaction link a 44 px square. */
+@media (max-width: 600px), (pointer: coarse) {
+  .trrow {
+    grid-template-columns: 72px 44px 1fr 34px 44px;
+    min-height: 44px;
+  }
+  .trtx {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+/* Phone defect 9: DeepScan's "View" receipt links keep their look; an invisible target grows around each to 44 px. */
+.dsrcpt a {
+  position: relative;
+}
+.dsrcpt a::after {
+  content: "";
+  position: absolute;
+  inset: -16px -10px;
+}
+/* The same for DeepScan's "Copy" button (28 px drawn, 44 px to hit). */
+.dsfcopy {
+  position: relative;
+}
+.dsfcopy::after {
+  content: "";
+  position: absolute;
+  inset: -8px 0;
 }
 
 .wlscroll,
 .arscroll {
-  padding-top: calc(var(--clip-top, 70px) + 56px);
+  --sp: calc(var(--clip-top, 70px) + 56px); /* this scroller's top padding: a sticky box is placed inside it */
+  padding-top: var(--sp);
 }
 
 /* The Arena draws twenty battles at a time; the rest sit behind this button. */
@@ -6431,4 +6658,177 @@ html.noscore #stage[data-lod="1"] .card .n {
 #bg.paused,
 #bg.paused * {
   animation-play-state: paused !important;
+}
+
+.orblink,
+.orbmore {
+  position: relative;
+}
+.orblink::after,
+.orbmore::after {
+  content: "";
+  position: absolute;
+  inset: -14px -10px;
+}
+
+.mapzoom {
+  position: fixed;
+  z-index: 8;
+  right: calc(var(--edge, 12px) + 4px);
+  bottom: calc(var(--clip-bottom, 80px) + 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mapzoom[hidden] {
+  display: none;
+}
+.mapzoomb {
+  all: unset;
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  background: rgba(var(--glass-rgb), 0.8);
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--fg-rgb), 0.12),
+    0 6px 16px -8px rgba(0, 0, 0, 0.55);
+  font: 500 24px/1 var(--font);
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mapzoomb:active {
+  transform: scale(0.94);
+}
+.mapzoomb:focus-visible {
+  outline: 2px solid var(--live);
+  outline-offset: 2px;
+}
+
+#pstate {
+  position: fixed;
+  z-index: 6;
+  left: 50%;
+  top: var(--ps-top, 96px);
+  height: var(--ps-h, 46px);
+  transform: translateX(-50%);
+  width: calc(100vw - 2 * var(--edge));
+  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  pointer-events: none;
+}
+#pstate[hidden] {
+  display: none;
+}
+#pstate .psline {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text);
+  text-shadow: 0 1px 8px rgba(var(--glass-rgb), 0.9);
+}
+#pstate .psfacts {
+  margin-top: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font: 600 11px var(--mono);
+  color: var(--mute);
+}
+#pstate .psfacts b {
+  color: var(--text);
+  font-weight: 700;
+}
+@media (max-width: 599.98px) {
+  #pstate .psline {
+    font-size: 12px;
+  }
+}
+
+/*
+   Like the launchpad pills each is a 44 px box with the 32 px pill drawn inside it, so the tap area is full size and the row is the same height as the one above. */
+#grprow {
+  position: fixed;
+  z-index: 7;
+  left: 50%;
+  top: calc(12px + env(safe-area-inset-top) + 50px + 4px + 44px); /* the launchpad row's 48 px box ends here, so the two rows' tap boxes touch and never overlap */
+  transform: translateX(-50%);
+  max-width: calc(100vw - 2 * var(--edge));
+  display: flex;
+  align-items: center;
+}
+#grprow[hidden] {
+  display: none;
+}
+#grpbar {
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  padding: 2px 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+#grpbar::-webkit-scrollbar {
+  display: none;
+}
+.grppill {
+  all: unset;
+  box-sizing: border-box;
+  position: relative;
+  flex: none;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  font: 600 12px/1 var(--font);
+  color: var(--text);
+}
+.grppill::before {
+  content: "";
+  position: absolute;
+  inset: 6px 0;
+  z-index: 0;
+  border-radius: 16px;
+  background: rgba(var(--glass-rgb), 0.8);
+  box-shadow: inset 0 -10px 16px -10px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.grppill > * {
+  position: relative;
+  z-index: 1;
+}
+.grppill .gd {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.grppill[data-g="read"] .gd {
+  background: var(--live);
+}
+.grppill[data-g="closer"] .gd {
+  background: var(--mandarin);
+}
+.grppill[data-g="unchecked"] .gd {
+  box-shadow: inset 0 0 0 1.5px var(--mute);
+}
+.grppill .gn {
+  font: 700 11px var(--mono);
+  color: var(--mute);
+}
+.grppill.on::before {
+  box-shadow: inset 0 0 0 2px var(--live);
+}
+.grppill.on .gn {
+  color: var(--text);
+}
+.grppill:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
 }

@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// Step 6: the DeepScan dossier in the site's look and order (ui/deepscan.ts): the score, Recent trades, Checks,
-/// Evidence, The read, Social and callouts, Social (not scored), Similar tokens, Stats, and the fine print. Plain
+/// Evidence, The read, Social and callouts, Social (not part of token health), Similar tokens, Stats, and the fine print. Plain
 /// sections under bold headings, divided by hairlines; one tinted word per check; every figure with its source line.
 struct DeepScanBody: View {
     let token: Token
@@ -119,14 +119,14 @@ struct DeepScanBody: View {
                      "Callouts: other accounts or tapes mentioning the token"], id: \.self) { t in
                 HStack(alignment: .firstTextBaseline, spacing: 8) { Text("•"); Text(t) }.font(Typo.sans(13)).foregroundStyle(Brand.paper).padding(.vertical, 2)
             }
-            Text("PINR does not read these yet. They are shown as not measured, never as zero, and they do not move the score.")
+            Text("PINR does not read these yet. They are shown as not measured, never as zero, and they do not move the token health reading.")
                 .modifier(Prose()).padding(.top, 6)
         }
     }
 
     private func social(_ d: Dossier) -> some View {
-        Section("Social (not scored)") {
-            Text("Social presence unchecked until the X API is connected. This score reads the chain only. Nothing here moves the score.")
+        Section("Social (not part of token health)") {
+            Text("Social presence unchecked until the X API is connected. This reading comes from the chain only. Nothing here moves the token health reading.")
                 .font(Typo.sans(11)).foregroundStyle(Brand.mute)
             if let s = d.social {
                 Text(Dossier.totalsSentence(s.totals)).modifier(Prose(paper: true))
@@ -307,16 +307,16 @@ private struct ScoreBlock: View {
                     } else {
                         Text(Format.dash).font(Typo.sans(34, .semibold)).foregroundStyle(Brand.mute)
                     }
-                    Text("PINRSCORE").font(Typo.mono(8.5, .medium)).tracking(1.2).foregroundStyle(Brand.mute)
+                    Text("TOKEN HEALTH").font(Typo.mono(8.5, .medium)).tracking(1.2).foregroundStyle(Brand.mute)
                 }
             }
             .frame(width: 108, height: 108)
             VStack(alignment: .leading, spacing: 8) {
                 Text(loadedLine).font(Typo.mono(12)).foregroundStyle(Brand.paper.opacity(0.85))
                 if Advice.shows(token) { Text(Advice.line).font(Typo.sans(12, .semibold)).foregroundStyle(Brand.paper) }
-                // The feed's note ("Not scored yet" on a seen coin) is not said twice beside the line above it.
+                // The feed's note ("No health reading yet" on a seen coin) is not said twice beside the line above it.
                 if let note = EngineNote.shown(token.note), token.label == nil, note != loadedLine { Text(note).font(Typo.sans(12)).foregroundStyle(Brand.paper) }
-                Text("Social presence unchecked until the X API is connected. This score reads the chain only.")
+                Text("Social presence unchecked until the X API is connected. This reading comes from the chain only.")
                     .font(Typo.sans(11.5)).foregroundStyle(Brand.mute)
             }
         }
@@ -324,9 +324,9 @@ private struct ScoreBlock: View {
     }
 
     private var loadedLine: String {
-        guard Ranking.isRead(token) else { return "Not scored yet" }
+        guard Ranking.isRead(token) else { return "No health reading yet" }
         var s = "\(Format.coverage(token.coverage)) of the readings loaded"
-        if let a = token.asOf { s += " · scored \(DiscoverCard.scoredAgo(a))" }
+        if let a = token.asOf { s += " · read \(DiscoverCard.scoredAgo(a))" }
         return s
     }
 }
@@ -360,9 +360,22 @@ private struct TradesSection: View {
                             Text(t.buy ? "Buy" : "Sell").font(Typo.mono(12, .bold)).foregroundStyle(t.buy ? Brand.lime : Brand.mandarin).frame(width: 38, alignment: .leading)
                             Text(Format.usd(t.usd)).font(Typo.mono(12)).foregroundStyle(Brand.paper)
                         }
-                    } trailing: { Text(Format.ago(t.time)).font(Typo.mono(11)).foregroundStyle(Brand.mute) }
+                    } trailing: {
+                        HStack(spacing: 8) {
+                            Text(Format.ago(t.time)).font(Typo.mono(11)).foregroundStyle(Brand.mute)
+                            //
+                            if let url = Trade.explorerURL(chain: token.chain, tx: t.tx) {
+                                Link(destination: url) { Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Brand.mute).frame(width: 28, height: 28) }
+                                    .accessibilityLabel("View this trade's transaction")
+                            }
+                        }
+                    }
                 }
-                Text("Pump.fun's trade list").font(Typo.mono(9.5)).foregroundStyle(Brand.mute).padding(.top, 4)
+                //
+                if let at = tape.asOf {
+                    let from = Tape.sourceLabel(tape.source).map { "\($0) · " } ?? ""
+                    Text("\(from)read \(max(0, Int(Date().timeIntervalSince(at)))) s ago").font(Typo.mono(9.5)).foregroundStyle(Brand.mute).padding(.top, 4)
+                }
             } else {
                 Text(note).modifier(Prose())
             }

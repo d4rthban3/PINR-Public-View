@@ -86,7 +86,7 @@ struct DiscoverCard: View {
             }
             .padding(.bottom, 6)
             // R4: a little larger than a tile's ribbon, both ways.
-            RibbonView(ribbon: Ribbon(token.flow), dash: 5, tileHeight: 100, leanRange: 16 * Ribbon.rowShare).frame(width: 140, height: 16)
+            RibbonView(token: token, dash: 5, tileHeight: 100, leanRange: 16 * Ribbon.rowShare).frame(width: 140, height: 16)
             if token.label == nil {
                 VStack(alignment: .leading, spacing: 4) {
                     FactRow(label: "MC", value: Format.usdCompact(token.valuationUsd), size: 12)
@@ -113,9 +113,9 @@ struct DiscoverCard: View {
                     Text("coverage")
                     Text("Chain only")
                     if Advice.shows(token) { Text(Advice.line).font(Typo.sans(10.5)) }
-                    if let a = token.asOf { Text("scored " + Self.scoredAgo(a)) }
+                    if let a = token.asOf { Text("read " + Self.scoredAgo(a)) }
                 } else {
-                    Text("not scored yet")
+                    Text("no health reading yet")
                 }
                 if token.flow?.isCount == true { Text("by count") }
             }
@@ -167,7 +167,8 @@ struct DiscoverCard: View {
     @ViewBuilder private var chart: some View {
         if let tf {
             if let set, set.drawable, let range = set.range {
-                LitePlot(points: set.shown.map(\.close), candles: candlesStyle ? set.shown : nil, range: range,
+                //
+                LitePlot(points: lineFromOpen(set.shown, bucket: 60).map(\.price), candles: candlesStyle ? set.shown : nil, range: range,
                          log: set.logScale, label: (set.asOfText ?? set.source).map { "\(tf.rawValue) · \($0)" })
             } else {
                 note(loading ? "loading…" : failed ? "chart not read yet" :

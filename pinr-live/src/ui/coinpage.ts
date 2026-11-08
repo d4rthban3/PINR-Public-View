@@ -2,7 +2,8 @@ import type { ChartResult } from "../../server/market";
 import { foldPrice, type Candle } from "../world/livecandle";
 import { changeWindowLabel, COIN_RANGES, formatPrice, type RangeId } from "../world/format";
 import { ageText, money, signedPct } from "../world/discoverlist";
-import type { IChartApi, IPriceLine, ISeriesApi, UTCTimestamp } from "lightweight-charts";
+import type { IChartApi, IPriceLine, ISeriesApi, ISeriesMarkersPluginApi, SeriesMarker, Time, UTCTimestamp } from "lightweight-charts";
+import { eventMarkers, type ChartEvent } from "../world/chartevents";
 import type { Evidence } from "../../server/evidence";
 import { createBadge } from "./badge";
 import { EYE_OFF_ICON } from "./hidemenu";
@@ -30,6 +31,7 @@ export interface CoinPageOptions extends GestureOptions {
   /** TradingView's symbol for a coin it lists (EXCHANGE:NAME), else null: the TradingView link then opens that chart. */
   fetchTvSymbol(address: string): Promise<string | null>;
   fetchEvidence(address: string): Promise<Evidence | null>;
+  fetchEvents(address: string): Promise<ChartEvent[]>;
 }
 
 export interface CoinPage {
@@ -114,11 +116,23 @@ export function heldPerSecond(cs: readonly Candle[], nowSec: number): { time: UT
   if (!cs.length) return out;
   let k = 0;
   let last = cs[0]![1];
+  //
+  out.push({ time: (cs[0]![0] - 1) as UTCTimestamp, value: last });
   for (let t = cs[0]![0]; t <= Math.max(nowSec, cs[cs.length - 1]![0]); t++) {
     while (k < cs.length && cs[k]![0] <= t) last = cs[k++]![4];
     out.push({ time: t as UTCTimestamp, value: last });
   }
   return out;
+}
+
+/**
+ *
+ * runs through each candle's close. So a young coin's first jump shows, and the line starts where the header's change is measured from.
+ */
+export function lineFromOpen(cs: readonly Candle[], bucketSec: number): { time: UTCTimestamp; value: number }[] {
+  if (!cs.length) return [];
+  const step = Math.max(1, Math.round(bucketSec));
+  return [{ time: (cs[0]![0] - step) as UTCTimestamp, value: cs[0]![1] }, ...cs.map((c) => ({ time: c[0] as UTCTimestamp, value: c[4] }))];
 }
 
 /** The 1-second candles with a bare second number where no trade happened, so the chart leaves that slot empty. */
@@ -182,6 +196,11 @@ export function changeText(c: { delta: number; pct: number; up: boolean }): stri
   return `${c.up ? "▲" : "▼"} ${formatPrice(Math.abs(c.delta))} (${signedPct(Math.abs(c.pct)).replace("+", "")})`;
 }
 
+export function changePctOnly(t: string): string {
+  const m = /^([▲▼]) .*\(([^()]+)\)$/.exec(t.trim());
+  return m ? `${m[1]} ${m[2]}` : t;
+}
+
 /** The key stats under the chart: label and value, a dash for anything not known (missing stays missing). */
 export function keyStats(it: Item): { label: string; value: string }[] {
   const dash = (v: string): string => (v && v !== "—" ? v : "—");
@@ -211,7 +230,9 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
   const miniName = el("b", "cpmininame");
   const miniPrice = el("b", "cpminiprice");
   const miniChange = el("span", "cpminichange");
-  mini.append(miniName, miniPrice, miniChange);
+  //
+  const miniPct = el("span", "cpminipct");
+  mini.append(miniName, miniPrice, miniChange, miniPct);
 
   // ---- the head: ticker, name, big price, change and its period ----
   const head = el("div", "cphead");
@@ -243,7 +264,10 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
   const chartBox = el("div", "cpchart");
   const plot = el("div", "cpplot");
   const status = el("div", "cpstatus");
-  chartBox.append(plot, status);
+  //
+  const evLayer = el("div", "cpevlayer");
+  evLayer.setAttribute("aria-hidden", "true");
+  chartBox.append(plot, evLayer, status);
 
   // ---- range tabs, the source, links out ----
   const tabs = el("div", "cptabs");
@@ -330,6 +354,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
   let item: Item | null = null;
   let range: RangeId = DEFAULT_RANGE;
   let candles: Candle[] = [];
+  let events: ChartEvent[] = [];
   let bucket = 900;
   let state: ChartResult["status"] | "loading" = "loading";
   let source = "";
@@ -380,6 +405,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
     setT(miniName, it.ticker !== "—" ? it.ticker : it.name);
     setT(miniPrice, priceEl.textContent ?? "");
     setT(miniChange, changeEl.textContent ?? "");
+    setT(miniPct, changePctOnly(changeEl.textContent ?? ""));
   }
 
   let statsKey = "";
@@ -400,7 +426,47 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
   }
 
   /** The chart library loads on the first coin page (it is not part of the first screen). */
-  let tv: { chart: IChartApi; candle: ISeriesApi<"Candlestick">; volume: ISeriesApi<"Histogram">; line: ISeriesApi<"Area">; startLine: IPriceLine | null } | null = null;
+  let tv: {
+    chart: IChartApi;
+    candle: ISeriesApi<"Candlestick">;
+    volume: ISeriesApi<"Histogram">;
+    line: ISeriesApi<"Area">;
+    startLine: IPriceLine | null;
+    lineMarks: ISeriesMarkersPluginApi<Time>;
+    candleMarks: ISeriesMarkersPluginApi<Time>;
+  } | null = null;
+  let marksKey = "";
+  const EVENT_VIOLET = "rgb(108, 77, 251)";
+  /** The labels now shown: each marker's time, the price it sits at, its tone and words. */
+  let shownMarks: { time: number; value: number; tone: string; text: string; on: "line" | "candles" }[] = [];
+  let placeFrame = 0;
+  /** Puts each label beside its dot once the chart has drawn (coordinates come from the chart), inside the chart's box. */
+  function placeLabels(): void {
+    if (placeFrame) return;
+    placeFrame = requestAnimationFrame(() => {
+      placeFrame = 0;
+      if (!tv) return;
+      const W = evLayer.clientWidth;
+      const H = evLayer.clientHeight;
+      const labels = evLayer.children;
+      shownMarks.forEach((m, i) => {
+        const lab = labels[i] as HTMLElement | undefined;
+        if (!lab) return;
+        const x = tv!.chart.timeScale().timeToCoordinate(m.time as UTCTimestamp);
+        const y = (m.on === "line" ? tv!.line : tv!.candle).priceToCoordinate(m.value);
+        if (x === null || y === null) {
+          lab.hidden = true;
+          return;
+        }
+        lab.hidden = false;
+        const w = lab.offsetWidth;
+        const h = lab.offsetHeight;
+        const left = Math.max(0, Math.min(W - w, x - w / 2));
+        const top = Math.max(0, Math.min(H - h, m.tone === "bad" ? y - 12 - h : y + 10));
+        lab.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+      });
+    });
+  }
   let tvLoading = false;
   let lwLineTypes: { curved: number; steps: number } = { curved: 2, steps: 1 };
   /** a "#rrggbb" or "rgb(...)" colour as its three channels (the fade is drawn in the line's own colour) */
@@ -468,7 +534,10 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
         visible: false,
       });
       lwLineTypes = { curved: lw.LineType.Curved, steps: lw.LineType.WithSteps };
-      tv = { chart, candle, volume, line, startLine: null };
+      tv = { chart, candle, volume, line, startLine: null, lineMarks: lw.createSeriesMarkers(line, []), candleMarks: lw.createSeriesMarkers(candle, []) };
+      // The labels follow the chart when its size or its shown span changes.
+      chart.timeScale().subscribeSizeChange(placeLabels);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(placeLabels);
       // The colours are read again when the theme is switched (the chart is not redrawn by a stylesheet).
       new MutationObserver(() => paint()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     } catch {
@@ -525,7 +594,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
       }
     }
     if (tv && asLine) {
-      const pts = haveCandles ? (oneSec ? heldPerSecond(candles, Math.floor(Date.now() / 1000)) : candles.map((c) => ({ time: c[0] as UTCTimestamp, value: c[4] }))) : fallback!;
+      const pts = haveCandles ? (oneSec ? heldPerSecond(candles, Math.floor(Date.now() / 1000)) : lineFromOpen(candles, bucket)) : fallback!;
       const first = haveCandles ? candles[0]![1] : pts[0]!.value;
       const dirUp = pts[pts.length - 1]!.value >= first;
       const col = dirUp ? lineColor() : css("--mandarin", "#ff8c1a");
@@ -554,6 +623,10 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
         fitted = range + ":" + (item?.id ?? "");
       }
     }
+    if (tv) {
+      const pts: [number, number][] = asLine ? (haveCandles ? candles.map((c) => [c[0], c[4]]) : fallback!.map((p) => [p.time as number, p.value])) : asCandles ? candles.map((c) => [c[0], c[4]]) : [];
+      paintMarkers(asLine ? "line" : asCandles ? "candles" : null, pts);
+    }
     // One message, from what is actually on the chart: a drawn line or candles never sit beside "Chart busy".
     const drawn = tv !== null && ok;
     const msg = drawn
@@ -577,6 +650,35 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
     status.classList.toggle("hide", msg === "");
     setT(caption, candles.length >= 2 && source ? `Chart: ${source === "PINR tape" ? "Pump.fun" : source} · ${view === "candles" ? (oneSec ? "candles for each second with a trade" : "candles with volume") : oneSec ? "price line, a quiet second holds the last price" : "price line"}` : fallback ? `Chart: ${item?.priceSource || "PINR"} price line · no candles are available for this coin yet` : "");
     paintHead();
+  }
+
+  function paintMarkers(on: "line" | "candles" | null, pts: [number, number][]): void {
+    if (!tv) return;
+    const times = pts.map((p) => p[0]);
+    const step = times.length > 1 ? times[1]! - times[0]! : bucket;
+    // A chart of a day or less says the clock time; a longer one the date too.
+    const span = times.length > 1 ? times[times.length - 1]! - times[0]! : 0;
+    const when = (t: number): string => (span <= 36 * 3600 ? tickLabel(t, step < 60 ? "sec" : "time") : candleTime(t, 60));
+    const marks = on ? eventMarkers(events, times, step, when) : [];
+    const key = `${on}|${document.documentElement.dataset.theme ?? ""}|${marks.map((m) => `${m.time}:${m.text}`).join(",")}`;
+    if (key !== marksKey) {
+      marksKey = key;
+      //
+      // drawn in PINR's deep violet, whatever its tone.
+      const list: SeriesMarker<Time>[] = marks.map((m) => ({ time: m.time as UTCTimestamp, position: "inBar", shape: "circle", color: EVENT_VIOLET, size: 1 }));
+      tv.lineMarks.setMarkers(on === "line" ? list : []);
+      tv.candleMarks.setMarkers(on === "candles" ? list : []);
+      const value = new Map(pts);
+      shownMarks = marks.map((m) => ({ time: m.time, value: value.get(m.time) ?? 0, tone: m.tone, text: m.text, on: on! }));
+      evLayer.replaceChildren(
+        ...shownMarks.map((m) => {
+          const lab = el("div", `cpevlabel ${m.tone}`, m.text);
+          lab.hidden = true;
+          return lab;
+        }),
+      );
+    }
+    if (shownMarks.length) placeLabels();
   }
 
   async function load(silent: boolean): Promise<void> {
@@ -670,6 +772,16 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
     paintStats();
     paint();
     if (next.flagKind !== "VAMP") void load(false);
+    //
+    events = [];
+    if (next.flagKind !== "VAMP" && next.address) {
+      const id = next.id;
+      void opts.fetchEvents(next.address).then((ev) => {
+        if (item?.id !== id) return;
+        events = ev;
+        paint();
+      });
+    }
   }
 
   return {

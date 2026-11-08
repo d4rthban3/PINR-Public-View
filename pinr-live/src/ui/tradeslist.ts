@@ -9,11 +9,25 @@ import { formatPriceCompact } from "../world/format";
  */
 export interface TradesView {
   none: boolean;
-  trades: [number, "buy" | "sell", number][];
+  trades: [number, "buy" | "sell", number, string?][];
   complete: boolean;
   coversFrom: number | null;
   asOf: number | null;
   summary: FlowSummary | null;
+  source?: string;
+}
+
+export function txUrl(chain: string | null | undefined, tx: string | undefined): string | null {
+  if (!tx) return null;
+  const evm = /^0x[0-9a-fA-F]{64}$/.test(tx);
+  if (chain === "solana") return evm ? null : /^[1-9A-HJ-NP-Za-km-z]{64,90}$/.test(tx) ? `https://solscan.io/tx/${tx}` : null;
+  if (chain === "bsc") return evm ? `https://bscscan.com/tx/${tx}` : null;
+  if (chain === "base") return evm ? `https://basescan.org/tx/${tx}` : null;
+  return null;
+}
+
+export function tradesSourceLabel(source: string | undefined): string | null {
+  return source === "pinr" ? "PINR's trade feed" : source === "pumpfun" ? "Pump.fun" : null;
 }
 export type TradesState = "loading" | "ok" | "error";
 
@@ -71,7 +85,7 @@ export function pressureWindows(v: TradesView, nowS: number): { label: string; b
 export const NO_TRADES_READ = "No trades read yet.";
 export const TAPE_LINES = 10;
 export const TAPE_LINES_MORE = 40;
-export function renderTrades(host: HTMLElement, state: TradesState, v: TradesView | null, limit = TAPE_LINES): void {
+export function renderTrades(host: HTMLElement, state: TradesState, v: TradesView | null, limit = TAPE_LINES, chain?: string | null): void {
   //
   const expanded = host.dataset.more === "1";
   host.replaceChildren();
@@ -83,15 +97,28 @@ export function renderTrades(host: HTMLElement, state: TradesState, v: TradesVie
   }
   const nowS = Date.now() / 1000;
   for (const w of pressureWindows(v, nowS)) host.append(pressure(w.label, w.buy, w.sell, w.n, w.atLeast));
-  // The receipt of these counts and dollars: Pump.fun's trade list, and how long ago it was read.
-  if (v.asOf) host.append(el("div", "dsrcpt", `Pump.fun · read ${Math.max(0, Math.round(nowS - v.asOf))} s ago`));
+  //
+  if (v.asOf) {
+    const from = tradesSourceLabel(v.source);
+    host.append(el("div", "dsrcpt", `${from ? `${from} · ` : ""}read ${Math.max(0, Math.round(nowS - v.asOf))} s ago`));
+  }
   if (!v.complete) host.append(el("p", "trnote warn", "Only the newest trades could be read for this coin, so the list may not reach back to the start of the window. This is not a full tape."));
   const list = el("div", "trlist");
   const shownN = expanded ? Math.max(limit, TAPE_LINES_MORE) : limit;
-  for (const [t, side, usd] of v.trades.slice(-shownN).reverse()) {
+  for (const [t, side, usd, tx] of v.trades.slice(-shownN).reverse()) {
     const row = el("div", "trrow");
     const ago = Math.max(0, Math.round(nowS - t));
     row.append(el("span", "trt", clock(t)), el("b", side === "buy" ? "trs up" : "trs down", side === "buy" ? "Buy" : "Sell"), el("span", "trv", money2(usd)), el("i", "tra", ago < 90 ? `${ago}s` : ago < 5400 ? `${Math.round(ago / 60)}m` : `${Math.round(ago / 3600)}h`));
+    //
+    const url = txUrl(chain, tx);
+    if (url) {
+      const a = el("a", "trtx", "↗");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.setAttribute("aria-label", "View this trade's transaction");
+      row.append(a);
+    }
     list.append(row);
   }
   host.append(list);
@@ -100,7 +127,7 @@ export function renderTrades(host: HTMLElement, state: TradesState, v: TradesVie
     more.type = "button";
     more.addEventListener("click", () => {
       host.dataset.more = expanded ? "0" : "1";
-      renderTrades(host, state, v, limit);
+      renderTrades(host, state, v, limit, chain);
     });
     host.append(more);
   }

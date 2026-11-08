@@ -113,6 +113,8 @@ export function createPlacer(root: HTMLElement, frame: HTMLElement, scroller: HT
       // The scroller spans the whole screen; the frame shows only the room's part of it.
       scroller.style.top = `${-p.top}px`;
       scroller.style.bottom = `${-p.bottom}px`;
+      // Where the room's frame starts, for a page whose first line must clear it (the coin page, phone defect 11).
+      scroller.style.setProperty("--room-top", `${p.top}px`);
     }
     const radius = p.radius.toFixed(1);
     if (radius !== lastRadius) {

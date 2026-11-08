@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun ArenaRoom(insets: PaddingValues, onOpen: (Token) -> Unit) {
     val store = LocalLiveFeed.current
+    val choices = LocalChoices.current
     var groups by remember { mutableStateOf<List<ArenaGroup>?>(null) }
     var failed by remember { mutableStateOf(false) }
     LaunchedEffect(store) {
@@ -70,7 +71,8 @@ fun ArenaRoom(insets: PaddingValues, onOpen: (Token) -> Unit) {
                 )
             }
         }
-        val g = groups
+        //
+        val g = groups?.let { io.pinr.app.feed.ArenaShown.apply(it, choices?.showMayhem ?: false) }
         if (g == null) item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (failed) PinchScene(PinchArt.waiting, 72)

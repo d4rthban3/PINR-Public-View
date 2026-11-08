@@ -57,8 +57,9 @@ export function createBgLayers(root: HTMLElement): BgLayers {
     const k = Math.max(root.offsetWidth, root.offsetHeight) / 1200;
     if (k > 0) root.style.setProperty("--bgk", k.toFixed(5));
   };
+  // The observer reports the box's first size before the first paint, so no direct read here: it forced a layout of the half-built page at start-up (about 22 ms at 4x CPU).
   if (typeof ResizeObserver === "function") new ResizeObserver(fit).observe(root);
-  fit();
+  else fit();
 
   function build(look: BgLook): void {
     const M = BG_MOVERS[look];

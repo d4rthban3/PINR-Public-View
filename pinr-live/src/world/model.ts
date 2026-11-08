@@ -59,12 +59,13 @@ export interface Item {
   lean5m?: number | null;
   /** The lean this token returns to when nothing is happening: above 0.5 mostly buying, below mostly selling. */
   restBuy: number;
-  /** Which side its latest event favoured: 1 = good news / buying (lime), 0 = red flag / selling (mandarin). */
-  evSide: 0 | 1;
+  evSide: 0 | 1 | 2;
   /** Where this token's reading stands. */
   status: Status;
   /** For a flagged token: what was proven. Flagged tokens show this instead of a score. */
   flagKind: FlagKind | null;
+  /** The engine's label as the feed sent it (null when none), kept even while it is not shown; MAYHEM coins are left out by it (item 114). */
+  label?: string | null;
   /** Seconds until a `checking` or `error` status changes. */
   statusLeft: number;
   /** Minutes since this token launched. Under NEW_LAUNCH_MIN counts as a new launch. */
@@ -117,6 +118,7 @@ export interface Item {
   createdCount?: number;
   /** Time (ms) of the newest tape event already shown on this token, so each one shows once. */
   lastEventMs?: number;
+  noteTrade?: { side: "buy" | "sell"; usd: number; atMs: number; /** when this page lit the tile (Date.now()): the glow starts then */ litAt: number; /** the tile's line, e.g. "Large buy $540" */ text: string };
   /** For a VAMP: the ticker and address of the original it copies. */
   /** Trades the launchpad tape saw in the last 5 minutes (how busy it is right now); undefined when unknown. */
   trades5m?: number;
@@ -130,9 +132,6 @@ export interface Item {
   /** Small label on the tile: "SIM" for made-up data, empty for real results. */
   tag: string;
 }
-
-/** The standard filled "verified" seal (PINR Art Pack: pinr-chk-light). Shown once, on the PINR wordmark on the Discover page. (The tokens no longer wear a verification badge: their pair and launchpad logos sit there instead.) */
-export const BADGE_VERIFIED_SRC = "/art/pinr-chk-light.svg";
 
 /** The letter in a token's circle. A bare address has no letter worth showing, so it gets a dot. */
 export function avatarChar(name: string): string {

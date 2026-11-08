@@ -15,8 +15,9 @@ const LOGO: Record<string, string> = {
   clanker: "/art/lp-clanker.png",
   bonkfun: "/art/lp-bonkfun.png",
 };
-/** Where the row ends, measured down from the header bar's bottom edge: 4 px of air, then 4 px of padding and the 32 px pill (the main.ts inset adds the tiles' own row gap after it). */
+/** Where the row ends, measured down from the header bar's bottom edge: 4 px of air, then 4 px of padding and the 32 px pill (the main.ts inset adds the tiles' own row gap after it). On a phone the pill is a 44 px tap box round a 32 px pill, and the row is 2 px padded: the pill ends 4 px lower. */
 export const LP_ROW_BOTTOM = 40;
+export const LP_ROW_BOTTOM_PHONE = 44;
 
 export interface LpPills {
   el: HTMLElement;

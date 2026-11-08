@@ -50,10 +50,13 @@ function amount(n: number): string {
   if (n > 0 && n < 1) return n.toLocaleString("en-US", { maximumSignificantDigits: 3, maximumFractionDigits: 12 });
   return String(Math.round(n * 100) / 100);
 }
-/** A share (0 to 1) as a percent, never rounded up to 100%; null when not a share. */
-function share(s: number | null): string | null {
+/** Below this percent a share reads "under 0.0001%" (written out, never "1.2e-18%"); the apps use the same rule. */
+export const TINY_PERCENT = 0.0001;
+/** A share (0 to 1) as a percent, never rounded up to 100% and never down to a made-up 0%; null when not a share. */
+export function share(s: number | null): string | null {
   if (s === null || s < 0 || s > 1) return null;
   const p = s * 100;
+  if (p > 0 && p < TINY_PERCENT * (1 - 1e-9)) return `under ${TINY_PERCENT}%`; // the tolerance keeps 1e-6 * 100 (0.0000999…) at 0.0001%
   return `${p >= 1 ? String(Math.floor(p * 100) / 100) : String(Number(p.toPrecision(2)))}%`;
 }
 function duration(sec: number): string {

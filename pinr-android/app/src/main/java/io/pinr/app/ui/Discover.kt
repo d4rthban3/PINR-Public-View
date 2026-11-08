@@ -78,16 +78,17 @@ internal fun mono(size: TextUnit, color: Color, weight: FontWeight = FontWeight.
     TextStyle(color = color, fontSize = size, fontWeight = weight, fontFamily = FontFamily.Monospace)
 
 /**
- * The Discover room (west on the map), in the site's look (ui/discover.ts) as the iPhone app draws it: the PINR wordmark
- * with its badge, "clean up the trenches" and the blurb, the search pill, the market pulse with Refresh, the four tabs,
+ * The Discover room (west on the map), in the site's look (ui/discover.ts) as the iPhone app draws it: the PINR wordmark,
+ * "clean up the trenches" and the blurb, the search pill, the market pulse with Refresh, the four tabs,
  * then 30 cards. As on the site the list is a snapshot: re-ranked on a tab, a search or Refresh.
  */
 @Composable
 fun DiscoverRoom(
     feed: FeedData, client: CoinClient, insets: PaddingValues, listKey: String, onListKey: (String) -> Unit, onOpen: (Token) -> Unit,
     tab: DiscoverTab, onTab: (DiscoverTab) -> Unit, query: String, onQuery: (String) -> Unit,
+    list: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
 ) {
-    // The picker is shared with the PINR page: a list chosen there shows here, and PINRscore is the empty key.
+    // The picker is shared with the PINR page: a list chosen there shows here, and Token health is the empty key.
     LaunchedEffect(listKey) { if (tab != DiscoverTab.BaseBnb) onTab(if (listKey.isEmpty()) DiscoverTab.PinrScore else DiscoverTab.List) }
     var order by remember { mutableStateOf<List<String>>(emptyList()) }
     var lastKnown by remember { mutableStateOf<Map<String, Token>>(emptyMap()) }
@@ -126,7 +127,7 @@ fun DiscoverRoom(
     }
     LaunchedEffect(feed.all.isEmpty()) { if (order.isEmpty()) rerank() }
     // Hiding a coin, or showing them again, re-ranks at once.
-    LaunchedEffect(choices?.hidden) { if (order.isNotEmpty()) rerank() }
+    LaunchedEffect(choices?.hidden, choices?.showMayhem) { if (order.isNotEmpty()) rerank() }
     LaunchedEffect(wholeSetRead) { if (wholeSetRead && !rankedWholeSet) { rankedWholeSet = true; rerank() } }
     //
     val findStore = LocalLiveFeed.current
@@ -143,6 +144,7 @@ fun DiscoverRoom(
 
     LazyColumn(
         Modifier.fillMaxSize().testTag("discover-list"),
+        state = list,
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = insets.calculateTopPadding(), bottom = insets.calculateBottomPadding()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -156,7 +158,7 @@ fun DiscoverRoom(
             cards.isEmpty() -> item {
                 Notice(if (query.isEmpty()) when (tab) {
                     DiscoverTab.Fresh -> "No coins under an hour old right now."
-                    DiscoverTab.PinrScore -> "No scored coins yet."
+                    DiscoverTab.PinrScore -> "No coins with a health reading yet."
                     DiscoverTab.BaseBnb -> "No Base or BNB Chain coins yet."
                     else -> "Nothing to show yet."
                 } else "No coin matches “$query”.", PaddingValues(), PinchArt.magnifier)
@@ -179,7 +181,6 @@ private fun Hero() {
         Box {
             // The wordmark at the site's 190 wide (the art is 1242 by 492).
             Image(wordmarkPainter(), "PINR", Modifier.size(190.dp, (190f * 492f / 1242.3f).dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
-            Image(painterResource(R.drawable.pinr_chk_light), null, Modifier.align(Alignment.BottomEnd).offset(22.dp, 8.dp).size(40.dp))
         }
         BasicText("clean up the trenches", style = sans(20.sp, Brand.paper, FontWeight.SemiBold))
         BasicText(
@@ -252,7 +253,7 @@ private fun Pulse(feed: FeedData, rankedAt: Long, tab: DiscoverTab, listKey: Str
                 io.pinr.app.feed.Lists.all().forEach { lp ->
                     Pill(lp.name, tab == DiscoverTab.List && pickedLp?.id == lp.id, "dtab-${lp.id}", Modifier) { onList(io.pinr.app.feed.Lists.first(lp)) }
                 }
-                Pill("PINRscore", tab == DiscoverTab.PinrScore, "dtab-PinrScore", Modifier) { onTab(DiscoverTab.PinrScore) }
+                Pill("Token health", tab == DiscoverTab.PinrScore, "dtab-PinrScore", Modifier) { onTab(DiscoverTab.PinrScore) }
                 Pill("Base/BNB", tab == DiscoverTab.BaseBnb, "dtab-BaseBnb", Modifier) { onTab(DiscoverTab.BaseBnb) }
             }
             if (tab == DiscoverTab.List && pickedLp != null) {
@@ -381,8 +382,12 @@ internal fun agoShort(s: Long): String = when {
  * on the left (picture with its badge, name, $ticker · age, the ribbon, MC and ATH) and the score with what it rests on
  * at the right. Then the lite chart with its options, the move and the volume, and the two ways in.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun DiscoverCard(t: Token, client: CoinClient, onHide: (Token) -> Unit = {}, open: (Token) -> Unit) {
+    val narrowCard = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360
+    val age = Format.ageText(t.launchedAtMs?.let { (System.currentTimeMillis() - it) / 60_000.0 })
+    val copy = t.possibleCopyOf?.let { " · possible copy of ${it.ticker ?: Format.DASH}" } ?: ""
     var tf by remember { mutableStateOf<Timeframe?>(null) }
     var candlesStyle by remember { mutableStateOf(false) }
     var set by remember { mutableStateOf<CandleSet?>(null) }
@@ -429,24 +434,31 @@ fun DiscoverCard(t: Token, client: CoinClient, onHide: (Token) -> Unit = {}, ope
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
                     TokenPicture(t, 46.dp)
                     Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    // The name takes all the room the hide button leaves (a second weighted spacer cut it to "Anse…" at 320 dp; Manager, 7 Nov).
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         BasicText(Format.title(t), style = sans(14.sp, Brand.paper, FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         // The site's sub line: "$TICKER · 41m", and a warning when its picture matches an earlier coin.
-                        val age = Format.ageText(t.launchedAtMs?.let { (System.currentTimeMillis() - it) / 60_000.0 })
-                        val copy = t.possibleCopyOf?.let { " · possible copy of ${it.ticker ?: Format.DASH}" } ?: ""
-                        BasicText("${Format.ticker(t)} · $age$copy", style = mono(11.5.sp, if (copy.isEmpty()) Brand.mute else Brand.mandarin), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        TagPills(t)
+                        // The ticker line starts clear of the picture's chain badge, which reaches past the picture's edge (it covered "$" at 320 dp).
+                        // Under 360 dp the age (and any copy warning) moves to the line under the picture, so the ticker line never cuts it.
+                        BasicText(if (narrowCard) Format.ticker(t) else "${Format.ticker(t)} · $age$copy", Modifier.padding(start = 18.dp), style = mono(11.5.sp, if (copy.isEmpty() || narrowCard) Brand.mute else Brand.mandarin), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        // The tags start clear of the picture's chain badge, which hangs past the picture's edge (it covered "Copy" at 320 dp);
+                        // under 360 dp they take their own line under the picture instead, where they have the card's whole width.
+                        if (!narrowCard) Box(Modifier.padding(start = 18.dp)) { TagPills(t) }
                     }
                     // Hide this coin: the site's eye-slash at the end of the name row. It never opens the card.
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(6.dp))
                     Box(
                         Modifier.size(34.dp).background(Brand.fg.copy(alpha = 0.07f), CircleShape).clickable { onHide(t) }
                             .semantics { contentDescription = "Hide this coin" }.testTag("dhide-${t.id}"),
                         contentAlignment = Alignment.Center,
                     ) { GlyphIcon(Glyphs.eyeOff, Brand.mute, 18.dp) }
                 }
+                if (narrowCard) {
+                    BasicText(age + copy, style = mono(11.5.sp, if (copy.isEmpty()) Brand.mute else Brand.mandarin))
+                    TagPills(t)
+                }
                 // R4: a little larger than a tile's ribbon, both ways.
-                RibbonView(Ribbon.of(t.flow), 5.dp, { seconds }, Modifier.width(140.dp).height(16.dp), tileHeight = 100.dp, leanRange = (16 * io.pinr.app.feed.Ribbon.ROW_SHARE).dp)
+                RibbonView(t, 5.dp, { seconds }, Modifier.width(140.dp).height(16.dp), tileHeight = 100.dp, leanRange = (16 * io.pinr.app.feed.Ribbon.ROW_SHARE).dp)
                 if (t.label == null) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         FactRow("MC", Format.money(t.valuationUsd), 10.5.sp)
@@ -458,10 +470,10 @@ fun DiscoverCard(t: Token, client: CoinClient, onHide: (Token) -> Unit = {}, ope
             ScoreColumn(t)
         }
         if (t.label != NoScoreLabel.Vamp) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            // The chips wrap to a second line when the card is narrow (as the site's), so "Candles" is never squeezed letter by letter.
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 Chip("Live", tf == null) { tf = null }
                 listOf(Timeframe.M15, Timeframe.H1, Timeframe.H4, Timeframe.D1).forEach { f -> Chip(f.code, tf == f) { tf = f } }
-                Spacer(Modifier.width(4.dp))
                 Chip(if (candlesStyle) "Line" else "Candles", false) { candlesStyle = !candlesStyle }
             }
             Box(Modifier.fillMaxWidth().height(110.dp)) {
@@ -472,7 +484,8 @@ fun DiscoverCard(t: Token, client: CoinClient, onHide: (Token) -> Unit = {}, ope
                     val r = s?.range
                     if (s != null && s.drawable && r != null) {
                         //
-                        LitePlot(s.shown.map { it.close }, if (candlesStyle) s.shown else null, r.start, r.endInclusive, s.logScale, s.asOf?.let { "${f.code} · ${io.pinr.app.feed.Format.asOf(it)}" } ?: s.source?.let { "${f.code} · $it" }, chartMod)
+                        //
+                        LitePlot(io.pinr.app.feed.lineFromOpen(s.shown, 60.0).map { it.second }, if (candlesStyle) s.shown else null, r.start, r.endInclusive, s.logScale, s.asOf?.let { "${f.code} · ${io.pinr.app.feed.Format.asOf(it)}" } ?: s.source?.let { "${f.code} · $it" }, chartMod)
                     } else {
                         ChartNote(if (loading) "loading…" else if (failed) "chart not read yet" else if (s?.status == CandleSet.Status.Busy) "chart not read yet" else "no candles for this size")
                     }
@@ -514,7 +527,7 @@ fun DiscoverCard(t: Token, client: CoinClient, onHide: (Token) -> Unit = {}, ope
 
 /**
  * The score and what it rests on, as the site's Discover row (ui/discover.ts): the number on the score scale, a label
- * in mandarin with "confirmed" or "unchecked" beside a flagged coin (copynote.ts `flagWord`), a dash over "unscored" when
+ * in mandarin with "confirmed" or "unchecked" beside a flagged coin (copynote.ts `flagWord`), a dash over "unread" when
  * nothing was read; then "Chain only" and "scored N ago" under a number, and "by count" when the mix counts trades.
  */
 @Composable
@@ -532,7 +545,7 @@ private fun ScoreColumn(t: Token) {
         BasicText(if (c.flagged) Format.flagWord(t) else c.word, style = small)
         if (c.numeric) {
             BasicText("Chain only", style = small)
-            Format.scoredAgo(t.asOfMs)?.let { BasicText("scored $it", style = small) }
+            Format.scoredAgo(t.asOfMs)?.let { BasicText("read $it", style = small) }
         }
         if (t.flow?.isCount == true) BasicText("by count", style = small)
     }
@@ -540,13 +553,16 @@ private fun ScoreColumn(t: Token) {
 
 @Composable
 internal fun Chip(text: String, on: Boolean, onClick: () -> Unit) {
-    BasicText(
-        text,
-        Modifier.background(if (on) Brand.lime.copy(alpha = 0.16f) else Brand.fg.copy(alpha = 0.07f), RoundedCornerShape(50))
-            .border(1.dp, if (on) Brand.lime.copy(alpha = 0.45f) else Color.Transparent, RoundedCornerShape(50))
-            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 5.dp),
-        style = mono(12.sp, if (on) Brand.lime else Brand.paper.copy(alpha = 0.85f), FontWeight.Medium),
-    )
+    // The pill is drawn as before; its tap area is 44 dp tall (item 17 tap sizes; Build Inspector, 7 Nov: the pills were about 26 dp).
+    Box(Modifier.heightIn(min = 44.dp).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        BasicText(
+            text,
+            Modifier.background(if (on) Brand.lime.copy(alpha = 0.16f) else Brand.fg.copy(alpha = 0.07f), RoundedCornerShape(50))
+                .border(1.dp, if (on) Brand.lime.copy(alpha = 0.45f) else Color.Transparent, RoundedCornerShape(50))
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            style = mono(12.sp, if (on) Brand.lime else Brand.paper.copy(alpha = 0.85f), FontWeight.Medium),
+        )
+    }
 }
 
 @Composable

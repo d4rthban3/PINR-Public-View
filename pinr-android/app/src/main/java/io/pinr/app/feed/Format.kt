@@ -64,7 +64,7 @@ object Format {
     /**
      * The score and coverage corner of a tile, as the site's (cards.ts with model.ts `statusLook`): a flagged coin shows
      * its label over "no data"; a coin with nothing read (coverage 0) or no score number shows a dash; the coverage
-     * figure is a dash at 0, and its word is "unscored" then.
+     * figure is a dash at 0, and its word is "unread" then.
      */
     data class Corner(val score: String, val numeric: Boolean, val flagged: Boolean, val coverage: String, val word: String)
 
@@ -72,7 +72,7 @@ object Format {
         val cov = if (t.coverage > 0) coverage(t.coverage) else DASH
         val label = t.label
         if (label != null) return Corner(label.text, numeric = false, flagged = true, coverage = cov, word = "no data")
-        val word = if (t.coverage > 0) "coverage" else "unscored"
+        val word = if (t.coverage > 0) "coverage" else "unread"
         val s = t.score
         return if (t.coverage <= 0 || s == null) Corner(DASH, false, false, cov, word) else Corner(s.toString(), true, false, cov, word)
     }

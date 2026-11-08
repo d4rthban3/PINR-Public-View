@@ -52,6 +52,75 @@ struct Screen: Equatable {
     var filter: PinrFilter
     var query: String
     var tab: DiscoverTab
+    /// How far the room was scrolled when it was left (the site keeps the PINR grid's, Discover's and the coin page's): nil when not read.
+    var scroll: CGFloat? = nil
+}
+
+//
+/// anything; a restore is a request the room takes when it is next shown. Offsets need iOS 18 (`ScrollPosition`); on iOS 17 Back keeps all
+/// but the scroll.
+@MainActor
+@Observable
+final class ScrollMemory {
+    @ObservationIgnored var offsets: [Room: CGFloat] = [:]
+    struct Request: Equatable { let room: Room; let y: CGFloat; let seq: Int; let at: Date }
+    private(set) var request: Request?
+    private var seq = 0
+    /// A restore holds this long: during the flight the room is drawn once on the map and again in place, and each copy puts the scroll back.
+    static let hold: TimeInterval = 1.5
+    func restore(_ room: Room, to y: CGFloat, now: Date = Date()) {
+        seq += 1
+        request = Request(room: room, y: y, seq: seq, at: now)
+    }
+    /// The room's pending restore, while it holds.
+    func pending(_ room: Room, now: Date = Date()) -> CGFloat? {
+        guard let r = request, r.room == room, now.timeIntervalSince(r.at) < Self.hold else { return nil }
+        return r.y
+    }
+}
+
+extension View {
+    //
+    func remembersScroll(_ room: Room) -> some View { modifier(RememberScroll(room: room)) }
+}
+
+private struct RememberScroll: ViewModifier {
+    let room: Room
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) { content.modifier(RememberScroll18(room: room)) } else { content }
+    }
+}
+
+@available(iOS 18, *)
+private struct RememberScroll18: ViewModifier {
+    let room: Room
+    @Environment(ScrollMemory.self) private var memory
+    @State private var position = ScrollPosition(edge: .top)
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y + $0.contentInsets.top }) { _, y in memory.offsets[room] = max(0, y) }
+            .onAppear {
+                // A room shown afresh starts at its top unless Back is putting it back.
+                memory.offsets[room] = 0
+                apply()
+            }
+            .onChange(of: memory.request) { apply() }
+    }
+
+    private func apply() {
+        guard let y = memory.pending(room) else { return }
+        memory.offsets[room] = y
+        // The room's content (a ranking, a coin's sections) lands a moment after it is shown; the scroll is set again once it has.
+        position.scrollTo(y: y)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            // Set again only if the room was held short of it (its content was not there yet); a room the user has already moved is left alone.
+            let now = memory.offsets[room] ?? 0
+            if now < y - 4 && now < 4 { position.scrollTo(y: y) }
+        }
+    }
 }
 
 /// Discover's search text and tab, held here (not inside the screen) so Back can put them back.

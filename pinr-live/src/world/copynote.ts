@@ -11,8 +11,8 @@ export const chainProven = (it: CopyFields): boolean => it.flagKind === "VAMP" &
 
 /** The line under a flagged token's ring on DeepScan. */
 export function flagLine(it: CopyFields): string {
-  if (it.flagKind === "VAMP") return chainProven(it) ? "Copy confirmed from Pump.fun's record: no score is shown" : "Possible copy, not confirmed yet (creators not checked yet): no score is shown";
-  return "Labelled by the checks: no score is shown";
+  if (it.flagKind === "VAMP") return chainProven(it) ? "Copy confirmed from Pump.fun's record: no token health is shown" : "Possible copy, not confirmed yet (creators not checked yet): no token health is shown";
+  return "Labelled by the checks: no token health is shown";
 }
 
 /** The word beside a flagged token on a Discover row. */

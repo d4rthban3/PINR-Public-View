@@ -55,7 +55,7 @@ object Lists {
                     val addr = c.optString("id"); if (addr.isEmpty()) continue
                     rank[addr.lowercase()] = c.optInt("rank", j + 1)
                     if (tokens.containsKey(addr.lowercase())) continue
-                    val o = org.json.JSONObject().put("address", addr).put("coverage", 0).put("launchpad", name).put("note", "Not scored yet").put("asOfMs", System.currentTimeMillis().toDouble())
+                    val o = org.json.JSONObject().put("address", addr).put("coverage", 0).put("launchpad", name).put("note", "No health reading yet").put("asOfMs", System.currentTimeMillis().toDouble())
                     (c.optString("chain").takeIf { it.isNotEmpty() && it != "null" } ?: chain)?.let { o.put("chain", it) }
                     c.optString("name").takeIf { it.isNotEmpty() && it != "null" }?.let { o.put("name", it) }
                     c.optString("ticker").takeIf { it.isNotEmpty() && it != "null" }?.let { o.put("ticker", it) }

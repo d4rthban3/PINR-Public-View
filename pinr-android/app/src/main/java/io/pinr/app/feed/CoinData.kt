@@ -11,6 +11,15 @@ import org.json.JSONObject
 /** One candle: open, high, low, close at a time (seconds), and the dollar volume. */
 data class Candle(val t: Long, val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double)
 
+/**
+ *
+ * candle (`step` seconds) before its close, then runs through each close, so a young coin's first jump shows, as on the site.
+ */
+fun lineFromOpen(c: List<Candle>, step: Double): List<Pair<Double, Double>> {
+    val f = c.firstOrNull() ?: return emptyList()
+    return listOf(f.t - maxOf(1.0, step) / 2 to f.open) + c.map { it.t.toDouble() to it.close }
+}
+
 /** The chart's timeframes, as the site's terminal offers them. */
 enum class Timeframe(val code: String) { M1("1m"), M5("5m"), M15("15m"), H1("1h"), H4("4h"), D1("1D") }
 
@@ -41,10 +50,51 @@ data class CandleSet(val candles: List<Candle>, val source: String?, val status:
 }
 
 /** A dated engine event on the chart (a score or flag change): plain text only. */
-data class ChartEvent(val t: Long, val kind: String, val tone: String, val text: String)
+data class ChartEvent(val t: Long, val kind: String, val tone: String, val text: String, val from: Double? = null, val to: Double? = null)
+
+data class EventMark(val t: Long, val price: Double, val tone: String, val text: String)
+
+object EventMarks {
+    /** At most this many on one chart, the newest kept. */
+    const val MAX = 8
+    private val kindWords = mapOf("score_up" to "Token health moved up", "score_down" to "Token health moved down", "flag_raised" to "Flag raised",
+        "flag_cleared" to "Flag cleared", "surge" to "Surge", "verified" to "Verified", "note" to "Note")
+
+    /** Each event inside the candles' span sits on the last candle at or before it, at its close, labelled with its own words, its scores
+     *  when it moved one, and `whenOf(t)`. Events off the chart are left out; nothing is invented. */
+    fun marks(events: List<ChartEvent>, candles: List<Candle>, bucketSec: Long, whenOf: (Long) -> String): List<EventMark> {
+        if (events.isEmpty() || candles.isEmpty()) return emptyList()
+        val first = candles.first().t; val end = candles.last().t + maxOf(1L, bucketSec)
+        val out = ArrayList<EventMark>()
+        var k = 0
+        for (e in events) {
+            if (e.t < first || e.t >= end) continue
+            while (k + 1 < candles.size && candles[k + 1].t <= e.t) k++
+            //
+            val words = if (e.kind == "score_up" || e.kind == "score_down") kindWords[e.kind] ?: e.kind else e.text.ifEmpty { kindWords[e.kind] ?: e.kind }
+            val scores = if (e.from != null && e.to != null) " ${e.from.toInt()} → ${e.to.toInt()}" else ""
+            out += EventMark(candles[k].t, candles[k].close, e.tone, "$words$scores · ${whenOf(e.t)}")
+        }
+        return out.takeLast(MAX)
+    }
+}
 
 /** One trade on the tape: when (seconds), buy or sell, and its size in dollars. */
-data class Trade(val t: Long, val buy: Boolean, val usd: Double)
+data class Trade(val t: Long, val buy: Boolean, val usd: Double, val tx: String? = null) {
+    companion object {
+        fun explorerUrl(chain: String?, tx: String?): String? {
+            if (tx == null) return null
+            val evm = Regex("^0x[0-9a-fA-F]{64}$").matches(tx)
+            val sol = Regex("^[1-9A-HJ-NP-Za-km-z]{64,90}$").matches(tx)
+            return when (chain) {
+                "solana" -> if (sol) "https://solscan.io/tx/$tx" else null
+                "bsc" -> if (evm) "https://bscscan.com/tx/$tx" else null
+                "base" -> if (evm) "https://basescan.org/tx/$tx" else null
+                else -> null
+            }
+        }
+    }
+}
 
 /** The tape (`/api/trades`, the site's TradesView): the trades oldest first, as the file holds them. */
 data class TradesView(
@@ -54,6 +104,7 @@ data class TradesView(
     val coversFrom: Long?,
     val asOf: Long?,
     val summary: Token.Flow?,
+    val source: String? = null,
 )
 
 /** The engine's PINRmetric for one coin: the score over time, a smoothed companion line and the gap between them. */
@@ -105,7 +156,8 @@ object CoinWire {
         return (0 until a.length()).mapNotNull { i ->
             val e = a.opt(i) as? JSONObject ?: return@mapNotNull null
             val t = num(e.opt("t"))?.takeIf { it > 0 } ?: return@mapNotNull null
-            ChartEvent(t.toLong(), e.str("kind") ?: return@mapNotNull null, e.str("tone") ?: "", e.str("text") ?: return@mapNotNull null)
+            ChartEvent(t.toLong(), e.str("kind") ?: return@mapNotNull null, e.str("tone") ?: "", (e.opt("text") as? String)?.trim() ?: "",
+                num(e.opt("from")), num(e.opt("to"))) // an empty sentence is kept: the mark then names the kind, as the site and iOS do
         }.sortedBy { it.t }
     }
 
@@ -115,12 +167,12 @@ object CoinWire {
         val rows = (o.opt("trades") as? JSONArray)?.let { a ->
             (0 until a.length()).mapNotNull { i ->
                 val r = a.opt(i) as? JSONArray ?: return@mapNotNull null
-                if (r.length() != 3) return@mapNotNull null
+                if (r.length() != 3 && r.length() != 4) return@mapNotNull null
                 val t = num(r.opt(0))?.takeIf { it > 0 } ?: return@mapNotNull null
                 val side = r.opt(1) as? String
                 val usd = num(r.opt(2))?.takeIf { it > 0 } ?: return@mapNotNull null
                 if (side != "buy" && side != "sell") return@mapNotNull null
-                Trade(t.toLong(), side == "buy", usd)
+                Trade(t.toLong(), side == "buy", usd, (r.opt(3) as? String)?.takeIf { it.isNotEmpty() })
             }
         } ?: emptyList()
         val summary = (o.opt("summary") as? JSONObject)?.let { s ->
@@ -134,7 +186,14 @@ object CoinWire {
             coversFrom = num(o.opt("coversFrom"))?.takeIf { it > 0 }?.toLong(),
             asOf = num(o.opt("asOf"))?.takeIf { it > 0 }?.toLong(),
             summary = summary,
+            source = o.str("source"),
         )
+    }
+
+    fun tradesSourceLabel(source: String?): String? = when (source) {
+        "pinr" -> "PINR's trade feed"
+        "pumpfun" -> "Pump.fun"
+        else -> null
     }
 
     /** A metric with fewer than two points has nothing to draw: it is absent, not a flat line. */

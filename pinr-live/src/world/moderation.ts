@@ -4,6 +4,7 @@
  */
 
 const HIDDEN_KEY = "pinr.hidden";
+const SHOW_MAYHEM_KEY = "pinr.showMayhem";
 
 export interface KeyValueStore {
   getItem(k: string): string | null;
@@ -13,6 +14,7 @@ export interface KeyValueStore {
 /** The coins this person has hidden. Kept in the browser (any failure to read or write it just means "this visit only"). */
 export class Moderation {
   private hidden: Set<string>;
+  private mayhemShown = false;
   /** Bumped on every change, so a reader can tell cheaply that it has to look again. */
   rev = 0;
   private listeners = new Set<() => void>();
@@ -23,11 +25,26 @@ export class Moderation {
       const raw = storage?.getItem(HIDDEN_KEY);
       const list: unknown = raw ? JSON.parse(raw) : [];
       if (Array.isArray(list)) this.hidden = new Set(list.filter((x): x is string => typeof x === "string").map((x) => x.toLowerCase()));
+      this.mayhemShown = storage?.getItem(SHOW_MAYHEM_KEY) === "1";
     } catch {
       /* blocked or damaged storage: defaults */
     }
   }
 
+  /** Coins labelled MAYHEM are left out of every view unless this person switched "Show Mayhem" on (off by default; item 114). */
+  get showMayhem(): boolean {
+    return this.mayhemShown;
+  }
+  setShowMayhem(on: boolean): void {
+    if (on === this.mayhemShown) return;
+    this.mayhemShown = on;
+    this.save(SHOW_MAYHEM_KEY, on ? "1" : "0");
+    this.changed();
+  }
+  /** Whether a coin is left out here: hidden by this person, or a MAYHEM coin while Show Mayhem is off. */
+  leftOut(address: string | null | undefined, label: string | null | undefined): boolean {
+    return this.isHidden(address) || (!this.mayhemShown && label === "MAYHEM");
+  }
   get hiddenCount(): number {
     return this.hidden.size;
   }

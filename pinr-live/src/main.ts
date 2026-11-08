@@ -6,8 +6,10 @@ import "./style.css";
 //
 applyHubSwitch();
 import { look, onLook, startTheme } from "./ui/theme";
-import { getSort, setRoster, type Filter } from "./world/filters";
+import { arenaAnswerTaken, getSort, setCopyWinners, setRoster, type Filter } from "./world/filters";
 import { NavTrail, navTrail, type NavEntry } from "./world/navtrail";
+import { readChartEvents, type ChartEvent } from "./world/chartevents";
+import { fetchEvidenceRetrying } from "./world/evidencefetch";
 import { DEFAULT_LIST, isListFilter, setOwnLists } from "./world/lists";
 startTheme();
 import { Camera, type View } from "./engine/camera";
@@ -25,8 +27,11 @@ import { CARD_W } from "./world/cards";
 const PHONE_TILE_TALL = 1.52;
 import { createHeader } from "./ui/header";
 import { createBgLayers } from "./ui/bglayers";
-import { LP_ROW_BOTTOM } from "./ui/lppills";
+import { LP_ROW_BOTTOM, LP_ROW_BOTTOM_PHONE } from "./ui/lppills";
+import { createPageStatement, groupCounts, STATE_H, STATE_H_PHONE } from "./ui/pagestatement";
+import { GROUP_ROW, GROUP_ROW_PHONE } from "./ui/grouppills";
 import { createTabBar } from "./ui/tabbar";
+import { createMapZoom, ZOOM_STEP_VZ } from "./ui/mapzoom";
 import { createPages } from "./ui/pages";
 import { createDiscover } from "./ui/discover";
 import { createCardFull } from "./ui/cardfull";
@@ -38,7 +43,7 @@ import { createGuidePage } from "./ui/guide";
 import { createAdsApplyPage } from "./ui/adsapply";
 import { AD_SLOTS, type AdSlot } from "./world/adsform";
 import { createWalletPage } from "./ui/wallet";
-import { createArenaPage } from "./ui/arena";
+import { arenaShown, createArenaPage } from "./ui/arena";
 import type { WalletView } from "../server/wallet";
 import type { GestureOptions, Placement } from "./ui/pageoverlay";
 import { createSettings } from "./ui/settings";
@@ -185,7 +190,7 @@ function dataViewNow(): DataView {
   const problems = l.fileProblems > 0 ? ` · ${l.fileProblems} ${l.fileProblems === 1 ? "file" : "files"} not read` : "";
   const age = l.asOfMs !== null ? ` · newest result ${ago(l.asOfMs)} old` : "";
   const prices = l.market ? ` · price history for ${l.market.covered}` : "";
-  const cut = l.more.total > l.more.loaded ? ` · loading the rest of the scored set (${l.more.loaded} of ${l.more.total})` : "";
+  const cut = l.more.total > l.more.loaded ? ` · loading the rest of the coins PINR has read (${l.more.loaded} of ${l.more.total})` : "";
   const status = `${l.tokens} tokens${age}${prices}${cut}${problems}${stale}`;
   const warn = l.fileProblems > 0 || l.state === "offline";
   if (l.mode === "feed")
@@ -299,6 +304,8 @@ const streamsRow = (): { label: string; value: string; tone?: "warn" } => {
 };
 const count = (f: (i: (typeof store.items)[number]) => boolean): number => store.items.filter(f).length;
 const header = createHeader({
+  //
+  onGroup: (g) => field.setCoinGroup(g),
   // The header filter works on both PINR and Discover.
   onFilter: (f) => {
     if (rankingNeedsRest(f)) liveFeed.wantRest();
@@ -360,8 +367,8 @@ const header = createHeader({
   pipeline: () => [
     { label: "Tokens found", value: String(store.items.length) },
     { label: "Being read now", value: String(count((i) => i.status === "checking")) },
-    { label: "Scored", value: String(count((i) => i.status === "ok" && i.coverage > 0)), tone: "live" },
-    { label: "Launchpad coins, not scored yet", value: String(count((i) => i.status === "ok" && i.coverage <= 0 && i.note === null)) },
+    { label: "Token health read", value: String(count((i) => i.status === "ok" && i.coverage > 0)), tone: "live" },
+    { label: "Launchpad coins, no health reading yet", value: String(count((i) => i.status === "ok" && i.coverage <= 0 && i.note === null)) },
     { label: "Readings to ask again", value: String(count((i) => i.status === "error")) },
     ...flaggedRows(),
   ],
@@ -390,6 +397,16 @@ const header = createHeader({
 });
 
 let zoomWheelTimer: ReturnType<typeof setTimeout> | undefined;
+//
+const mapZoom = createMapZoom((dir) => {
+  cam.cancelHoming();
+  cam.anchorX = view.w / 2;
+  cam.anchorY = view.h / 2;
+  cam.vz += dir * ZOOM_STEP_VZ;
+  clearTimeout(zoomWheelTimer);
+  zoomWheelTimer = setTimeout(onZoomEnd, 450);
+});
+document.body.append(mapZoom.el);
 const whitepaper = createWhitepaper(() => {
   whitepaper.show(false);
   header.setPage(current);
@@ -493,6 +510,19 @@ const discover = createDiscover({
   },
 });
 document.getElementById("inner")!.append(discover.el);
+// Item 114: when Show Mayhem is switched, the feed takes the MAYHEM coins in or out on its next tick; a full PINR grid never reshuffles by
+// itself, so it is laid out again a frame later, and Discover read again, as the filter's other switches do.
+let mayhemWas = moderation.showMayhem;
+moderation.onChange(() => {
+  if (moderation.showMayhem === mayhemWas) return;
+  mayhemWas = moderation.showMayhem;
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      field.relayout();
+      discover.refresh();
+    }),
+  );
+});
 
 /** Price history from the feed server for the DeepScan chart. A failure is an answer too ("error"), never a made-up line. */
 async function fetchChart(address: string, range: RangeId, launchpad?: string | null): Promise<ChartResult> {
@@ -617,14 +647,17 @@ async function fetchDossier(address: string): Promise<Dossier | null> {
     return null;
   }
 }
+/*
+ *  (the section keeps saying "loading"), and is null only when every try failed. */
 async function fetchEvidence(address: string): Promise<Evidence | null> {
+  return fetchEvidenceRetrying(address, (url) => fetch(url, { cache: "no-store" }));
+}
+async function fetchEvents(address: string): Promise<ChartEvent[]> {
   try {
-    const r = await fetch(`/api/evidence?address=${encodeURIComponent(address)}`, { cache: "no-store" });
-    if (!r.ok) return null;
-    const j = (await r.json()) as { evidence?: Evidence | null };
-    return j.evidence ?? null;
+    const r = await fetch(`/api/events?address=${encodeURIComponent(address)}`, { cache: "no-store" });
+    return r.ok ? readChartEvents(await r.json()) : [];
   } catch {
-    return null;
+    return [];
   }
 }
 //
@@ -633,6 +666,7 @@ const coinPage = createCoinPage({
   fetchChart,
   fetchTvSymbol,
   fetchEvidence,
+  fetchEvents,
   onPinchStart: () => {
     cam.touching = true;
     cam.stopMotion();
@@ -700,6 +734,29 @@ const arenaPage = createArenaPage({
   ...pageGestures,
 });
 document.getElementById("inner")!.append(arenaPage.el);
+//
+// with its own Mayhem rule; the PINR page shows a Copy-tagged coin only while it leads. A flipped battle swaps the coin in at the next read.
+let lastBattles = 0;
+async function refreshCopyWinners(): Promise<void> {
+  try {
+    const r = await fetch("/api/arena", { cache: "no-store" });
+    if (!r.ok) return;
+    const j = (await r.json()) as { groups?: import("../server/arena").ArenaGroup[] };
+    const groups = j.groups ?? [];
+    // For about a minute and a half after the site restarts the Arena fills from nothing (0, then 1, then all its battles); an answer with under half
+    // the battles of the last good one keeps the last leaders, so the PINR page never hides every other leader meanwhile (Build Inspector, 8 Nov).
+    const take = arenaAnswerTaken(lastBattles, groups.length);
+    lastBattles = take.next;
+    if (!take.taken) return;
+    const leaders = arenaShown(groups, moderation.showMayhem).map((g) => g.members[0]!.address);
+    if (setCopyWinners(leaders)) field.relayout();
+  } catch {
+    /* kept as it was; the next read tries again */
+  }
+}
+void refreshCopyWinners();
+setInterval(() => void refreshCopyWinners(), 60_000);
+moderation.onChange(() => void refreshCopyWinners());
 
 let focusToken: Item | null = null;
 /**
@@ -1055,11 +1112,18 @@ function resize(): void {
   streams.resize(view.w, view.h, Math.min(dpr, STREAM_DPR));
   const hb = header.el.getBoundingClientRect();
   //
-  topInset = hb.bottom + LP_ROW_BOTTOM + GAP * homeScale();
-  bottomInset = view.h - tabbar.top() + 10;
+  const grp = header.groupRowShown() ? (view.w < PHONE_WIDTH ? GROUP_ROW_PHONE : GROUP_ROW) : 0;
+  const lpBottom = hb.bottom + (view.w < PHONE_WIDTH ? LP_ROW_BOTTOM_PHONE : LP_ROW_BOTTOM) + grp;
+  //
+  document.documentElement.style.setProperty("--ps-top", `${lpBottom + 2}px`);
+  document.documentElement.style.setProperty("--ps-h", `${view.w < PHONE_WIDTH ? STATE_H_PHONE : STATE_H}px`);
+  topInset = lpBottom + (view.w < PHONE_WIDTH ? STATE_H_PHONE : STATE_H) + GAP * homeScale();
+  //
+  const tabTop = tabbar.top();
+  bottomInset = view.h - tabTop + 10;
   // The grid is cut cleanly at the header's and footer's edges.
   document.documentElement.style.setProperty("--clip-top", `${hb.bottom + 2}px`);
-  document.documentElement.style.setProperty("--clip-bottom", `${view.h - tabbar.top() + 2}px`);
+  document.documentElement.style.setProperty("--clip-bottom", `${view.h - tabTop + 2}px`);
   document.documentElement.style.setProperty("--vh", `${view.h}px`);
   layoutHome();
   //
@@ -1148,13 +1212,26 @@ stage.addEventListener("pointermove", (e) => {
   // A finger that moves is scrolling, not holding or tapping.
   if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > MOVE_PX) {
     moved = true;
+    clearTimeout(warmTimer);
+    cardFull.cancelPrepare();
     clearTimeout(holdTimer);
     holdTimer = undefined;
     clearTimeout(longTimer);
     longTimer = undefined;
   }
 });
+let warmTimer: ReturnType<typeof setTimeout> | undefined;
+function warmCard(x: number, y: number): void {
+  clearTimeout(warmTimer);
+  warmTimer = setTimeout(() => {
+    if (moved || multi || mapMode || journey || current !== "pinr" || cardFull.isOpen) return;
+    const id = tileUnder(x, y);
+    const token = id === null ? undefined : store.items.find((i) => i.id === id);
+    if (token) cardFull.prepare(token);
+  }, 40);
+}
 stage.addEventListener("pointerdown", (e) => {
+  warmCard(e.clientX, e.clientY);
   if (e.pointerType === "mouse") {
     downAt = { x: e.clientX, y: e.clientY };
     moved = false;
@@ -1222,6 +1299,23 @@ stage.addEventListener("pointercancel", release);
 stage.addEventListener("pointerleave", () => letGo());
 
 attachInput(stage, cam, () => view, () => {}, onZoomEnd, () => holding);
+//
+const pageStatement = createPageStatement();
+document.body.append(pageStatement.el);
+setInterval(() => {
+  const on = current === "pinr" && !mapMode;
+  pageStatement.show(on);
+  if (on) {
+    pageStatement.update(store.items, Date.now());
+    const wasShown = header.groupRowShown();
+    header.setGroupCounts(groupCounts(store.items));
+    // The group row appears once it has counts: the tiles' inset grows by its height, so the room is measured again.
+    if (wasShown !== header.groupRowShown()) {
+      sizedW = -1;
+      resize();
+    }
+  }
+}, 700);
 if (import.meta.env.DEV) {
   Object.assign(window, {
     __cam: cam,
@@ -1481,6 +1575,7 @@ function frameBody(now: number): void {
   if (mapMode && !journey) current = nearestPage(frames, cam.x, cam.y, view.h, topInset, s);
   if (!journey) tabbar.setActive(current);
   tabbar.setCompass(current, atMacro());
+  mapZoom.setShown(mapMode && view.w < PHONE_WIDTH);
   header.setBack(trail.canBack || (mapMode && !journey));
   prof.mark("camera bounds+tabs");
   const vt = field.visibleTiles();
@@ -1515,13 +1610,17 @@ async function openByAddress(address: string): Promise<void> {
   for (let i = 0; i < 40; i++) {
     const it = store.items.find((x) => x.address?.toLowerCase() === lower);
     if (it) return openDeepScan(it);
-    if (i === 0 && !(await liveFeed.find(address))) return notListed(address);
+    if (i === 0) {
+      const why = await liveFeed.findWhy(address);
+      if (!why.found) return notListed(address, why.notice);
+    }
     await new Promise((r) => setTimeout(r, 250));
   }
   notListed(address);
 }
-function notListed(address: string): void {
-  showNote(`This coin is not on PINR's lists right now (${shortAddress(address)}).`);
+//
+function notListed(address: string, notice?: string): void {
+  showNote(notice ? `${notice} (${shortAddress(address)})` : `This coin is not on PINR's lists right now (${shortAddress(address)}).`, { sticky: true });
 }
 async function openCoinLink(address: string): Promise<void> {
   const lower = address.toLowerCase();
@@ -1538,7 +1637,10 @@ async function openCoinLink(address: string): Promise<void> {
       return;
     }
     // not on the first page: ask the server for this one coin at once; a coin the server does not know says so
-    if (i === 0 && !(await liveFeed.find(address))) return notListed(address);
+    if (i === 0) {
+      const why = await liveFeed.findWhy(address);
+      if (!why.found) return notListed(address, why.notice);
+    }
     await new Promise((r) => setTimeout(r, 250));
   }
   notListed(address);

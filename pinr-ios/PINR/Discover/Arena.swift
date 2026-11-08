@@ -16,6 +16,8 @@ struct ArenaMember: Identifiable, Sendable, Equatable {
     let earliest: Bool
     /// False when the 30-minute figures were not read yet (the site's `recentKnown`); a missing field counts as read.
     var recentKnown = true
+    /// Item 114: the coin is labelled MAYHEM (the server marks it); left out of its battle unless Show Mayhem is on.
+    var mayhem = false
     var id: String { address.lowercased() }
 
     /// "$20.9K+ · 500+ tx" when the count is a floor, else "$1.2K · 327 tx".
@@ -48,6 +50,20 @@ enum ArenaSearch {
     }
 }
 
+//
+/// versions is not shown; the rest keep their order, and the battle takes its title from its first version left.
+enum ArenaShown {
+    static func apply(_ groups: [ArenaGroup], showMayhem: Bool) -> [ArenaGroup] {
+        if showMayhem { return groups }
+        return groups.compactMap { g in
+            let members = g.members.filter { !$0.mayhem }
+            if members.count < 2 { return nil }
+            if members.count == g.members.count { return g }
+            return ArenaGroup(id: g.id, title: members[0].name ?? Format.dash, ticker: members[0].ticker ?? "", members: members)
+        }
+    }
+}
+
 struct WireArena: Decodable, Sendable {
     let groups: [ArenaGroup]
 
@@ -55,6 +71,7 @@ struct WireArena: Decodable, Sendable {
         let address: String?, name: String?, ticker: String?, imageUrl: String?, chain: String?, launchpad: String?
         let launchedAtMs: Double?, recentTrades: Double?, recentUsd: Double?, recentAtLeast: Bool?, recentKnown: Bool?
         let volume24hUsd: Double?, xPosts: Double?, hasX: Bool?, change24hPct: Double?, valuationUsd: Double?, earliest: Bool?
+        let mayhem: Bool?
     }
     private struct G: Decodable { let id: String?, title: String?, ticker: String?; let members: [Lenient<M>]? }
     private enum Key: String, CodingKey { case groups }
@@ -70,7 +87,7 @@ struct WireArena: Decodable, Sendable {
                                    imageURL: m.imageUrl.flatMap(httpsURL), launchedAt: fin(m.launchedAtMs).map { Date(timeIntervalSince1970: $0 / 1000) },
                                    recentTrades: Int(fin(m.recentTrades) ?? 0), recentUsd: fin(m.recentUsd) ?? 0, recentAtLeast: m.recentAtLeast == true,
                                    volume24h: fin(m.volume24hUsd), change24h: fin(m.change24hPct), valuation: fin(m.valuationUsd),
-                                   xPosts: fin(m.xPosts).map { Int($0) }, hasX: m.hasX == true, earliest: m.earliest == true, recentKnown: m.recentKnown != false)
+                                   xPosts: fin(m.xPosts).map { Int($0) }, hasX: m.hasX == true, earliest: m.earliest == true, recentKnown: m.recentKnown != false, mayhem: m.mayhem == true)
             }
             return members.isEmpty ? nil : ArenaGroup(id: id, title: g.title.map(Invisible.strip) ?? Format.dash, ticker: g.ticker.map(Invisible.strip) ?? "", members: members)
         }
@@ -82,6 +99,7 @@ struct ArenaRoom: View {
     @Environment(FeedStore.self) private var store
     @Environment(Camera.self) private var camera
     @Environment(CoinSelection.self) private var selection
+    @Environment(ModerationStore.self) private var moderation
     @State private var groups: [ArenaGroup]?
     @State private var failed = false
     @State private var query = ""
@@ -107,7 +125,8 @@ struct ArenaRoom: View {
                 Text("PvP Arena").font(Typo.sans(30, .bold)).foregroundStyle(Brand.paper)
                 Text("Every version of a contested coin, side by side. Ranked by the last 30 minutes' volume, then X, then the chart. Observed figures, not a verdict.")
                     .font(Typo.sans(13)).foregroundStyle(Brand.mute).lineSpacing(3)
-                if let groups {
+                if let loaded = groups {
+                    let groups = ArenaShown.apply(loaded, showMayhem: moderation.showMayhem)
                     let shown = query.trimmingCharacters(in: .whitespaces).isEmpty ? groups : ArenaSearch.filter(groups, query)
                     if !query.trimmingCharacters(in: .whitespaces).isEmpty {
                         Text("Search · \(shown.count) \(shown.count == 1 ? "battle" : "battles") found").font(Typo.mono(12, .medium)).foregroundStyle(Brand.mute)

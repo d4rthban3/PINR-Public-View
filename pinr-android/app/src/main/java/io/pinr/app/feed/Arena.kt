@@ -16,6 +16,8 @@ data class ArenaMember(
     val volume24h: Double?, val change24h: Double?, val valuation: Double?, val xPosts: Int?, val hasX: Boolean, val earliest: Boolean,
     /** False when the 30-minute figures were not read yet (the site's `recentKnown`); a missing field counts as read. */
     val recentKnown: Boolean = true,
+    /** Item 114: the coin is labelled MAYHEM (the server marks it); left out of its battle unless Show Mayhem is on. */
+    val mayhem: Boolean = false,
 ) {
     val id: String get() = address.lowercase()
 
@@ -25,6 +27,24 @@ data class ArenaMember(
 }
 
 data class ArenaGroup(val id: String, val title: String, val ticker: String, val members: List<ArenaMember>)
+
+/**
+ *
+ * versions is not shown; the rest keep their order, and the battle takes its title from its first version left.
+ */
+object ArenaShown {
+    fun apply(groups: List<ArenaGroup>, showMayhem: Boolean): List<ArenaGroup> {
+        if (showMayhem) return groups
+        return groups.mapNotNull { g ->
+            val members = g.members.filter { !it.mayhem }
+            when {
+                members.size < 2 -> null
+                members.size == g.members.size -> g
+                else -> ArenaGroup(g.id, members[0].name ?: Format.DASH, members[0].ticker ?: "", members)
+            }
+        }
+    }
+}
 
 object ArenaWire {
     fun parse(body: String): List<ArenaGroup>? {
@@ -43,6 +63,7 @@ object ArenaWire {
                     a, m.str("name")?.let(Invisible::strip)?.ifEmpty { null }, m.str("ticker")?.let(Invisible::strip)?.ifEmpty { null }, m.str("chain"), m.str("launchpad"), EvidenceHub.httpsUrl(m.str("imageUrl")),
                     m.num("launchedAtMs")?.toLong(), (m.num("recentTrades") ?: 0.0).toInt(), m.num("recentUsd") ?: 0.0, m.opt("recentAtLeast") == true,
                     m.num("volume24hUsd"), m.num("change24hPct"), m.num("valuationUsd"), m.num("xPosts")?.toInt(), m.opt("hasX") == true, m.opt("earliest") == true, m.opt("recentKnown") != false,
+                    m.opt("mayhem") == true,
                 )
             }
             if (members.isEmpty()) null else ArenaGroup(id, g.str("title")?.let(Invisible::strip) ?: Format.DASH, g.str("ticker")?.let(Invisible::strip) ?: "", members)

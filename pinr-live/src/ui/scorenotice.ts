@@ -1,4 +1,4 @@
-export const SCORE_NOTICE = "Social presence unchecked until the X API is connected. This score reads the chain only.";
+export const SCORE_NOTICE = "Social presence unchecked until the X API is connected. This reading comes from the chain only.";
 
 /** The line beside a score everywhere (tiles, Discover, DeepScan; the iPhone app matches): the score is a reading, not advice. Public copy: change it only by a decision. */
 export const ADVICE_LINE = "Not investment advice";

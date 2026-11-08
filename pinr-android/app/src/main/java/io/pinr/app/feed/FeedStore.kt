@@ -104,6 +104,7 @@ class FeedStore(
 ) {
     private val _data = MutableStateFlow(FeedData())
     val data: StateFlow<FeedData> = _data
+    val realTrades = RealTrades()
 
     private var firstPage: List<Token> = emptyList()
     private var mode: String? = null
@@ -190,20 +191,24 @@ class FeedStore(
     val found = java.util.concurrent.ConcurrentHashMap<String, Token>()
 
     /** A coin by its exact address: from the lists if it is there, else asked of the feed (`/api/token/find`). Null for an unknown address or a hidden copy. */
-    suspend fun find(address: String): Token? {
+    suspend fun find(address: String): Token? = findWhy(address).first
+
+    suspend fun findWhy(address: String): Pair<Token?, String?> {
         val id = address.lowercase()
-        _data.value.byId[id]?.let { return it }
-        found[id]?.let { return it }
-        val base = baseUrl ?: return null
-        if (!CoinAddress.isAddress(address)) return null
+        _data.value.byId[id]?.let { return it to null }
+        found[id]?.let { return it to null }
+        val base = baseUrl ?: return null to null
+        if (!CoinAddress.isAddress(address)) return null to null
         val r = read("$base/api/token/find?address=${java.net.URLEncoder.encode(address, "UTF-8")}") { body ->
             (try { org.json.JSONObject(body) } catch (e: Exception) { null })?.let { o ->
-                (o.opt("token") as? org.json.JSONObject)?.let(Wire::token)?.let { w -> (Token.make(w, baseUrl) as? Token.Made.Shown)?.token }
+                val t = (o.opt("token") as? org.json.JSONObject)?.let(Wire::token)?.let { w -> (Token.make(w, baseUrl) as? Token.Made.Shown)?.token }
+                val notice = if (o.optBoolean("hidden", false)) o.optString("notice", "").ifEmpty { null } else null
+                t to notice
             }
         }
-        val t = (r as? Read.Ok)?.value ?: return null
-        found[t.id] = t
-        return t
+        val (t, notice) = (r as? Read.Ok)?.value ?: return null to null
+        if (t != null) found[t.id] = t
+        return t to notice
     }
 
     private class RestPart(val page: WireRestPage, val tokens: List<Token>, val bad: Int)
@@ -398,6 +403,7 @@ class FeedStore(
         noteScores(touched)
         firstPage = copy.order.mapNotNull { firstTokens[it] }
         foldTrades(o.ticks)
+        for (t in o.ticks) realTrades.hear(t)
         if (o.rest.isNotEmpty() || o.restGone.isNotEmpty()) {
             val next = ArrayList(rest)
             val at = HashMap<String, Int>(next.size * 2)

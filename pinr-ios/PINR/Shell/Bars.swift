@@ -137,7 +137,7 @@ struct GuideButton: View {
     var body: some View {
         Button { asking = true } label: {
             //
-            Image("pinch-banner").resizable().scaledToFit().frame(height: 30)
+            WordmarkImage().scaledToFit().frame(height: 30)
             .padding(.horizontal, 10).frame(height: 40)
             .background(Capsule().fill(Brand.fg.opacity(0.07)))
             .overlay(Capsule().strokeBorder(Brand.fg.opacity(0.14), lineWidth: 1))

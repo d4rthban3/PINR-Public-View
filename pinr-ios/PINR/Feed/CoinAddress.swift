@@ -21,4 +21,12 @@ enum CoinAddress {
         }
         return candidate.flatMap { isAddress($0) ? $0 : nil }
     }
+
+    //
+    /// not showing, else the site's line; with the address shortened as the site's ("2XZDLf…pump").
+    static func linkNote(notice: String?, address: String) -> String {
+        let short = address.count > 12 ? "\(address.prefix(6))…\(address.suffix(4))" : address
+        if let n = notice?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty, n.count <= 200 { return "\(n) (\(short))" }
+        return "This coin is not on PINR's lists right now (\(short))."
+    }
 }

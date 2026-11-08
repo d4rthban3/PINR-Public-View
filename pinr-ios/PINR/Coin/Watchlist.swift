@@ -89,12 +89,11 @@ final class WatchStore {
 
     func remove(_ a: PriceAlert) { alerts.removeAll { $0.id == a.id }; save() }
 
-    /// Called with each new reading of the feed.
-    func check(_ tokens: [Token]) {
+    /// Called with each new reading of the feed; `price` is a coin's price by its address.
+    func check(price: (String) -> Double?) {
         if Date() > toastUntil { toast = nil }
         guard !alerts.isEmpty else { return }
-        let prices = Dictionary(tokens.map { ($0.address, $0.priceUsd) }, uniquingKeysWith: { a, _ in a })
-        let (fired, waiting) = Watch.check(alerts, price: { prices[$0] ?? nil })
+        let (fired, waiting) = Watch.check(alerts, price: price)
         guard !fired.isEmpty else { return }
         alerts = waiting
         save()

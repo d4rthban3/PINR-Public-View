@@ -71,11 +71,11 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 
 /** The site's notice beside a score (ui/scorenotice.ts SCORE_NOTICE). Public copy: change it only on the site first. */
-const val SCORE_NOTICE = "Social presence unchecked until the X API is connected. This score reads the chain only."
+const val SCORE_NOTICE = "Social presence unchecked until the X API is connected. This reading comes from the chain only."
 
 /**
  * The DeepScan dossier in the site's order and words (ui/deepscan.ts): the score, Recent trades, Checks, Evidence, The
- * read, Social and callouts, Social (not scored), Similar tokens, Stats, and the fine print. Plain sections under bold
+ * read, Social and callouts, Social (not part of token health), Similar tokens, Stats, and the fine print. Plain sections under bold
  * headings, divided by hairlines; one tinted word per check; every figure with its source line.
  */
 @Composable
@@ -225,7 +225,7 @@ private fun SourceLine(source: String?, atMs: Long?, link: String?) {
 }
 
 /**
- * The score (deepscan.ts): the ring in the score's colour with the number inside and "PINRSCORE" under it (a flagged
+ * The score (deepscan.ts): the ring in the score's colour with the number inside and "TOKEN HEALTH" under it (a flagged
  * coin: the ring full in mandarin and its label); beside it what it rests on, the notice under a number, and the
  * engine's findings as chips.
  */
@@ -251,7 +251,7 @@ private fun ScoreBlock(t: Token) {
                     c.numeric -> BasicText(c.score, style = sans(34.sp, Brand.score(c.score.toInt()), FontWeight.SemiBold).copy(fontFeatureSettings = "tnum"))
                     else -> BasicText(c.score, style = sans(34.sp, Brand.mute, FontWeight.SemiBold))
                 }
-                BasicText("PINRSCORE", style = mono(8.5.sp, Brand.mute, FontWeight.Medium).copy(letterSpacing = 0.12.em))
+                BasicText("TOKEN HEALTH", style = mono(8.5.sp, Brand.mute, FontWeight.Medium).copy(letterSpacing = 0.12.em))
             }
         }
         Spacer(Modifier.width(18.dp))
@@ -273,12 +273,12 @@ fun coverageLine(t: Token): String {
     val c = Format.corner(t)
     if (c.flagged) {
         return if (t.label == NoScoreLabel.Vamp) {
-            if (t.copyOf?.chainProven == true) "Copy confirmed from Pump.fun's record: no score is shown" else "Possible copy, not confirmed yet (creators not checked yet): no score is shown"
-        } else "Labelled by the checks: no score is shown"
+            if (t.copyOf?.chainProven == true) "Copy confirmed from Pump.fun's record: no token health is shown" else "Possible copy, not confirmed yet (creators not checked yet): no token health is shown"
+        } else "Labelled by the checks: no token health is shown"
     }
     if (t.coverage <= 0) return "Nothing measured yet"
     val ago = if (c.numeric) Format.scoredAgo(t.asOfMs) else null
-    return "${Format.coverage(t.coverage)} of the readings loaded" + (ago?.let { " · scored $it" } ?: "")
+    return "${Format.coverage(t.coverage)} of the readings loaded" + (ago?.let { " · read $it" } ?: "")
 }
 
 /**
@@ -290,6 +290,7 @@ private fun TradesSection(t: Token, client: CoinClient) {
     var view by remember(t.id) { mutableStateOf<TradesView?>(null) }
     var state by remember(t.id) { mutableStateOf("loading") }
     var more by remember(t.id) { mutableStateOf(false) }
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
     //
     val store = io.pinr.app.ui.LocalLiveFeed.current
@@ -322,7 +323,7 @@ private fun TradesSection(t: Token, client: CoinClient) {
             v.none || v.trades.isEmpty() -> Prose(if (v.none) TradesWords.NO_TRADES_READ else "No trades in the list yet.")
             else -> {
                 pressureWindows(v, now).forEach { w -> PressureLine(w.label, w.buy, w.sell, w.n, w.atLeast) }
-                v.asOf?.let { BasicText("Pump.fun · read ${maxOf(0, now - it)} s ago", style = mono(10.sp, Brand.mute)) }
+                v.asOf?.let { BasicText((io.pinr.app.feed.CoinWire.tradesSourceLabel(v.source)?.let { s -> "$s · " } ?: "") + "read ${maxOf(0, now - it)} s ago", style = mono(10.sp, Brand.mute)) }
                 if (!v.complete) BasicText(
                     "Only the newest trades could be read for this coin, so the list may not reach back to the start of the window. This is not a full tape.",
                     style = sans(12.5.sp, Brand.mandarin),
@@ -338,6 +339,11 @@ private fun TradesSection(t: Token, client: CoinClient) {
                             BasicText(if (tr.buy) "Buy" else "Sell", Modifier.weight(1f), style = mono(12.sp, if (tr.buy) Brand.lime else Brand.mandarin, FontWeight.Bold))
                             BasicText(Format.money2(tr.usd), style = mono(12.sp, Brand.paper))
                             BasicText(Format.tradeAgo(maxOf(0, now - tr.t)), Modifier.width(40.dp), style = mono(11.sp, Brand.mute).copy(textAlign = androidx.compose.ui.text.style.TextAlign.End))
+                            //
+                            val url = io.pinr.app.feed.Trade.explorerUrl(t.chain, tr.tx)
+                            Box(Modifier.size(32.dp).then(if (url != null) Modifier.clickable { uri.openUri(url) } else Modifier), contentAlignment = Alignment.Center) {
+                                if (url != null) BasicText("↗", style = mono(13.sp, Brand.mute))
+                            }
                         }
                         Box(Modifier.fillMaxWidth().height(1.dp).background(Brand.fg.copy(alpha = 0.07f)))
                     }
@@ -477,16 +483,16 @@ private fun Callouts(d: Dossier) {
             "Follower counts and how old the accounts are", "How active the posts are, and who engages with them",
             "Callouts: other accounts or tapes mentioning the token",
         ).forEach { BasicText("•  $it", Modifier.padding(vertical = 2.dp), style = sans(13.sp, Brand.paper)) }
-        Box(Modifier.padding(top = 6.dp)) { Prose("PINR does not read these yet. They are shown as not measured, never as zero, and they do not move the score.") }
+        Box(Modifier.padding(top = 6.dp)) { Prose("PINR does not read these yet. They are shown as not measured, never as zero, and they do not move the token health reading.") }
     }
 }
 
 @Composable
 private fun Social(d: Dossier) {
     val ctx = LocalContext.current
-    Section("Social (not scored)") {
+    Section("Social (not part of token health)") {
         // The site's note (.dsscannote) keeps 8 points under it before what follows.
-        BasicText("$SCORE_NOTICE Nothing here moves the score.", Modifier.padding(bottom = 8.dp), style = sans(11.sp, Brand.mute).copy(lineHeight = 15.4.sp))
+        BasicText("$SCORE_NOTICE Nothing here moves the token health reading.", Modifier.padding(bottom = 8.dp), style = sans(11.sp, Brand.mute).copy(lineHeight = 15.4.sp))
         val s = d.social
         if (s == null) {
             Prose("No social scan has been run for this coin yet. Nothing is claimed either way.")

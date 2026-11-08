@@ -11,9 +11,15 @@ final class ModerationStore {
     private(set) var hidden: Set<String>
     private let defaults: UserDefaults
 
+    //
+    var showMayhem: Bool {
+        didSet { defaults.set(showMayhem, forKey: "pinr.showMayhem") }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         hidden = Set(defaults.stringArray(forKey: "pinr.hidden") ?? [])
+        showMayhem = defaults.bool(forKey: "pinr.showMayhem")
     }
 
     func isHidden(_ t: Token) -> Bool { hidden.contains(t.id) }
@@ -25,8 +31,11 @@ final class ModerationStore {
     //
     func add(_ ids: some Sequence<String>) { hidden.formUnion(ids.map { $0.lowercased() }); save() }
 
-    /// The list without the coins this person hid.
-    func visible(_ tokens: [Token]) -> [Token] { hidden.isEmpty ? tokens : tokens.filter { !hidden.contains($0.id) } }
+    /// The list without the coins this person hid, and without the MAYHEM coins unless Show Mayhem is on.
+    func visible(_ tokens: [Token]) -> [Token] {
+        if hidden.isEmpty && showMayhem { return tokens }
+        return tokens.filter { !hidden.contains($0.id) && (showMayhem || $0.label != .mayhem) }
+    }
 
     private func save() { defaults.set(Array(hidden), forKey: "pinr.hidden") }
 }

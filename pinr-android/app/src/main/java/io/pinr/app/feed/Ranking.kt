@@ -12,9 +12,9 @@ import kotlin.math.pow
  */
 enum class PinrFilter(val label: String, val hint: String) {
     Trending("Trending", "Most active right now"),
-    Movers("Movers", "Biggest score swings"),
+    Movers("Movers", "Biggest token health swings"),
     New("New Launches", "Under an hour old"),
-    PinrScore("PINRscore", "Real, scored projects by score"),
+    PinrScore("Token health", "Real projects, by token health"),
 }
 
 object Ranking {
@@ -69,7 +69,7 @@ object Ranking {
     fun recentAt(t: Token, nowMs: Long): Long? =
         (if (scoreOf(t) != null) t.asOfMs else (t.seenAtMs ?: t.launchedAtMs))?.takeIf { nowMs - it <= RECENT_MS && it <= nowMs + 60_000 }
 
-    /** The PINRscore as a number, or null (unscored, flagged, nothing loaded): never zero. */
+    /** The Token health as a number, or null (unscored, flagged, nothing loaded): never zero. */
     fun scoreOf(t: Token): Int? = if (t.label == null && t.coverage > 0) t.score else null
 
     /** True when PINR has read the token: a score, a label, or some coverage. */

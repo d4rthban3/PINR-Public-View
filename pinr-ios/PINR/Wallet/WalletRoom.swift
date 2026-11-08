@@ -68,7 +68,7 @@ struct WalletRoom: View {
                     }
                     .padding(.bottom, 4)
                     if v.holdings.contains(where: { $0.score != nil }) {
-                        Text("Social presence unchecked until the X API is connected. This score reads the chain only.").modifier(Hint())
+                        Text("Social presence unchecked until the X API is connected. This reading comes from the chain only.").modifier(Hint())
                     }
                     ForEach(v.holdings) { h in row(h) }
                     Text("Only tokens PINR tracks are listed. Tokens without a price are left out of the total.").modifier(Hint()).padding(.top, 4)

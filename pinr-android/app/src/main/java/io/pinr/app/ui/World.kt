@@ -80,7 +80,74 @@ enum class Room(val col: Int, val row: Int, val title: String) {
  */
 val LocalMapScale = compositionLocalOf { 1f }
 
-data class Screen(val room: Room, val coin: String?, val listKey: String, val query: String, val tab: io.pinr.app.feed.DiscoverTab)
+data class Screen(val room: Room, val coin: String?, val listKey: String, val query: String, val tab: io.pinr.app.feed.DiscoverTab, val scroll: ScrollPlace? = null)
+
+/** Where a room was scrolled: the first item shown and how far into it (a list or grid), or pixels (the coin page, `index` 0). */
+data class ScrollPlace(val index: Int, val offset: Int)
+
+/**
+ *
+ * opened afresh starts at its top; Back puts the saved place back (`restore`, taken by `settle` when the room is shown).
+ */
+class Scrolls {
+    val pinr = androidx.compose.foundation.lazy.grid.LazyGridState()
+    val discover = androidx.compose.foundation.lazy.LazyListState()
+    val coin = androidx.compose.foundation.ScrollState(0)
+    private var pending: Pair<Room, ScrollPlace>? = null
+    /** Counts restores, so a Back within one room (one coin to the one before) is applied too. */
+    var seq by mutableStateOf(0)
+        private set
+
+    fun read(room: Room): ScrollPlace? = when (room) {
+        Room.Pinr -> ScrollPlace(pinr.firstVisibleItemIndex, pinr.firstVisibleItemScrollOffset)
+        // Discover's search pill is a sticky header, reported as the first visible item while it is pinned: the place is the topmost
+        // real item under it (the highest index covering the top of the list) and how far it is scrolled.
+        Room.Discover -> discover.layoutInfo.visibleItemsInfo.filter { it.offset <= 0 && it.offset + it.size > 0 }.maxByOrNull { it.index }
+            ?.let { ScrollPlace(it.index, -it.offset) } ?: ScrollPlace(discover.firstVisibleItemIndex, discover.firstVisibleItemScrollOffset)
+        Room.Terminal -> ScrollPlace(0, coin.value)
+        else -> null
+    }
+
+    fun restore(room: Room, place: ScrollPlace) {
+        pending = room to place
+        seq++
+    }
+
+    /** The place `room` is shown at now: the saved one when Back asked for it, else its top. */
+    fun take(room: Room): ScrollPlace {
+        val p = pending?.takeIf { it.first == room }?.second
+        pending = null
+        return p ?: ScrollPlace(0, 0)
+    }
+
+    /** Scrolls `room` to `place`. A room drawn again when the camera settles starts with its list nearly empty for a moment (its ranking lands
+     *  after), which clamps any scroll near the top; so the place is set, checked over the next frames, and set again until it holds (up to
+     *  three seconds). */
+    suspend fun apply(room: Room, place: ScrollPlace) {
+        val list: (suspend () -> Unit)? = when (room) {
+            Room.Pinr -> suspend { pinr.scrollToItem(place.index, place.offset) }
+            Room.Discover -> suspend { discover.scrollToItem(place.index, place.offset) }
+            else -> null
+        }
+        if (list == null) {
+            if (room == Room.Terminal) coin.scrollTo(place.offset)
+            return
+        }
+        fun at(): Boolean = when (room) {
+            Room.Pinr -> pinr.firstVisibleItemIndex == place.index && kotlin.math.abs(pinr.firstVisibleItemScrollOffset - place.offset) < 4
+            else -> read(Room.Discover)?.let { it.index == place.index && kotlin.math.abs(it.offset - place.offset) < 4 } ?: false
+        }
+        val touched = { if (room == Room.Pinr) pinr.isScrollInProgress else discover.isScrollInProgress }
+        var held = 0
+        var waited = 0
+        // A user who starts scrolling takes over: the place is not set again under their finger.
+        while (held < 6 && waited < 3000 && !(waited > 0 && touched())) {
+            if (!at()) { held = 0; runCatching { list() } } else held++
+            kotlinx.coroutines.delay(50)
+            waited += 50
+        }
+    }
+}
 
 class Camera {
     var room by mutableStateOf(Room.Pinr)

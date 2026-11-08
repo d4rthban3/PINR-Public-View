@@ -65,7 +65,7 @@ fun dataStatus(f: FeedData, nowMs: Long = System.currentTimeMillis()): Triple<St
 
 private fun liveLine(f: FeedData, nowMs: Long): String {
     val age = f.asOfMs?.let { " · newest result ${Format2.ago(nowMs - it)} old" } ?: ""
-    val cut = f.restTotal?.let { t -> if (t > f.restLoaded) " · loading the rest of the scored set (${f.restLoaded} of $t)" else null } ?: ""
+    val cut = f.restTotal?.let { t -> if (t > f.restLoaded) " · loading the rest of the coins PINR has read (${f.restLoaded} of $t)" else null } ?: ""
     return "${f.firstPageCount} tokens$age$cut"
 }
 

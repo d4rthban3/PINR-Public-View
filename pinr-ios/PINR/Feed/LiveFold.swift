@@ -35,3 +35,60 @@ extension Token {
         return t
     }
 }
+
+//
+/// `hearTrade`): the last 40 heard within 15 seconds, for a ribbon to turn each into one dot, and when the coin last traded. A coin heard
+/// within 30 minutes is "real"; before any trade, or after, a ribbon has nothing to draw. Nothing here is observed by SwiftUI: a drawer reads it
+/// each frame, so a burst of trades never redraws a screen.
+@MainActor
+final class RealTrades {
+    struct Heard: Equatable {
+        /// when the app heard it
+        let at: Date
+        let buy: Bool
+        /// 0...1 from the dollars, as the site's `sizeOfTrade`
+        let size: Double
+    }
+    private struct Coin {
+        var trades: [Heard] = []
+        var lastRealAt: Date?
+        var heardAt: Date = .distantPast
+    }
+
+    static let keepCount = 40
+    static let keepSeconds: TimeInterval = 15
+    static let realFor: TimeInterval = 30 * 60
+    static let maxCoins = 3000
+    private var coins: [String: Coin] = [:]
+
+    /// The site's size of a trade: log of its dollars, a small fixed size when the dollars are unknown.
+    static func size(usd: Double?) -> Double {
+        guard let usd, usd.isFinite, usd > 0 else { return 0.05 }
+        return min(1, log10(1 + usd) / 3)
+    }
+
+    /// One trade from the stream (a price alone, with no side, is not a trade).
+    func hear(_ tick: LiveTick, heard: Date = Date()) {
+        guard let buy = tick.isBuy else { return }
+        let key = tick.address.lowercased()
+        var c = coins[key] ?? Coin()
+        c.trades.append(Heard(at: heard, buy: buy, size: Self.size(usd: tick.usd)))
+        while c.trades.count > Self.keepCount || (c.trades.first.map { heard.timeIntervalSince($0.at) > Self.keepSeconds } ?? false) { c.trades.removeFirst() }
+        if c.lastRealAt.map({ tick.at > $0 }) ?? true { c.lastRealAt = tick.at }
+        c.heardAt = heard
+        coins[key] = c
+        if coins.count > Self.maxCoins {
+            for (k, _) in coins.sorted(by: { $0.value.heardAt < $1.value.heardAt }).prefix(coins.count - Self.maxCoins + 200) where k != key { coins[k] = nil }
+        }
+    }
+
+    /// The trades heard for a coin lately, oldest first (each drawer keeps its own cursor and takes each once).
+    func trades(_ address: String) -> [Heard] { coins[address.lowercased()]?.trades ?? [] }
+    /// When the coin's latest real trade happened (its own time), or nil.
+    func lastRealAt(_ address: String) -> Date? { coins[address.lowercased()]?.lastRealAt }
+    /// True while the coin has had a real trade heard in the last 30 minutes.
+    func isReal(_ address: String, now: Date = Date()) -> Bool {
+        guard let c = coins[address.lowercased()] else { return false }
+        return now.timeIntervalSince(c.heardAt) < Self.realFor
+    }
+}

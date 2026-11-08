@@ -87,7 +87,7 @@ export function showHiddenNote(name: string, onUndo: () => void): void {
 }
 
 /** A plain line at the foot of the page for a few seconds (the same place as the hidden note), e.g. why a coin link opened nothing. */
-export function showNote(text: string): void {
+export function showNote(text: string, opts: { sticky?: boolean } = {}): void {
   document.getElementById("hidenote")?.remove();
   clearTimeout(toastTimer);
   const t = document.createElement("div");
@@ -97,5 +97,9 @@ export function showNote(text: string): void {
   msg.textContent = text;
   t.append(msg);
   document.body.append(t);
-  toastTimer = setTimeout(() => t.remove(), 8000);
+  //
+  if (opts.sticky) {
+    t.classList.add("sticky");
+    t.addEventListener("click", () => t.remove());
+  } else toastTimer = setTimeout(() => t.remove(), 8000);
 }

@@ -37,6 +37,7 @@ struct PinrRoom: View {
             }
             .scrollIndicators(.hidden)
             .refreshable { rerank() }
+            .remembersScroll(.pinr)
         }
         .overlay {
             if let t = grown {
@@ -53,7 +54,8 @@ struct PinrRoom: View {
         .onChange(of: store.ownRev) { rerank() }
         .onChange(of: prefs.roster) { rerank() }
         .onChange(of: moderation.hidden) { rerank() }
-        .onChange(of: store.all.isEmpty) { if order.isEmpty { rerank() } }
+        .onChange(of: moderation.showMayhem) { rerank() }
+        .onChange(of: store.isEmpty) { if order.isEmpty { rerank() } }
         .onChange(of: wholeSetRead) { if wholeSetRead && !rankedWholeSet { rankedWholeSet = true; rerank() } }
         .onAppear { if order.isEmpty { rerank() } }
         .task {
@@ -70,20 +72,22 @@ struct PinrRoom: View {
     }
 
     @ViewBuilder private func content(tileWidth w: CGFloat, gap: CGFloat, perRow: Int) -> some View {
-        let tiles = current
         if case .mismatch = store.state {
             Notice(text: "The feed speaks a different data contract than this app. Results are not shown until the two agree.")
-        } else if tiles.isEmpty {
-            if store.all.isEmpty { ProgressView().tint(Brand.lime).padding(.top, 120) } else { Notice(text: emptyText) }
+        } else if order.isEmpty {
+            if store.isEmpty { ProgressView().tint(Brand.lime).padding(.top, 120) } else { Notice(text: emptyText) }
         } else {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(w), spacing: gap), count: perRow), spacing: gap + 2) {
-                ForEach(tiles) { t in
-                    // As on the site, a tile opens its coin in PINRterminal + DeepScan.
-                    Button { grow(t) } label: { TileView(token: t, width: w).equatable() }
-                        .buttonStyle(PressScale())
-                        .matchedGeometryEffect(id: t.id, in: cardSpace, isSource: grown?.id != t.id)
-                        .opacity(grown?.id == t.id ? 0 : 1)
-                        .contextMenu { HideButton(token: t) }
+                // The page lists ids; each tile reads its own coin (REPORT-15), so a price change redraws one tile, not the page.
+                ForEach(order, id: \.self) { id in
+                    LiveCoin(id: id, fallback: lastKnown[id]) { t in
+                        // As on the site, a tile opens its coin in PINRterminal + DeepScan.
+                        Button { grow(t) } label: { TileView(token: t, width: w).equatable() }
+                            .buttonStyle(PressScale())
+                            .matchedGeometryEffect(id: t.id, in: cardSpace, isSource: grown?.id != t.id)
+                            .opacity(grown?.id == t.id ? 0 : 1)
+                            .contextMenu { HideButton(token: t) }
+                    }
                 }
             }
         }
@@ -99,16 +103,12 @@ struct PinrRoom: View {
 
     private var wholeSetRead: Bool { store.restTotal.map { store.restLoaded >= $0 } ?? false }
 
-    private var current: [Token] {
-        order.compactMap { store.byId[$0] ?? lastKnown[$0] }
-    }
-
     private var emptyText: String {
         if prefs.list != nil { return "Nothing here right now." }
         switch prefs.filter {
         case .new: return "No coins under an hour old right now."
-        case .movers: return "No score has moved since the app opened."
-        case .pinrscore: return "No scored coins yet."
+        case .movers: return "No token health reading has moved since the app opened."
+        case .pinrscore: return "No coins with a health reading yet."
         case .trending: return "Nothing to show yet."
         }
     }
@@ -132,6 +132,19 @@ struct PinrRoom: View {
             order = ranked.map(\.id)
             lastKnown = Dictionary(ranked.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         }
+    }
+}
+
+/// One coin by its id, read from its own box in the store (`FeedStore.box`), or the copy the ranking kept while the store has
+/// none: a change to another coin never redraws it.
+struct LiveCoin<Content: View>: View {
+    let id: String
+    let fallback: Token?
+    @ViewBuilder let content: (Token) -> Content
+    @Environment(FeedStore.self) private var store
+
+    var body: some View {
+        if let t = store.box(id).token ?? fallback { content(t) }
     }
 }
 

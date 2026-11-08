@@ -18,6 +18,8 @@ enum Brand {
     static let tagBot = dyn(0xFF7AA2, 0xB3124F)
     static let lilac = Color(hex: 0xCDB6FE)
     static let violet = Color(hex: 0x6C4DFB)
+    //
+    static let violetWords = dyn(0x917AFC, 0x6C4DFB)
     /// Text on a lime field (`--on-live`).
     static let onLive = dyn(0x0A0C0E, 0xFFFFFF)
     /// Tile glass: black at 80% in the dark look, white at 80% in the light one (`--glass-rgb`).
@@ -29,7 +31,7 @@ enum Brand {
     /// Kept for older call sites: the glass the cards sit on.
     static let card = glass
 
-    /// The PINRscore colour scale: mandarin at 25 and below, lime at 95 and above, a smooth blend between (scorecolor.ts).
+    /// The Token health colour scale: mandarin at 25 and below, lime at 95 and above, a smooth blend between (scorecolor.ts).
     static func score(_ s: Int) -> Color {
         let t = min(1, max(0, (Double(s) - 25) / 70))
         return Color(UIColor { tr in

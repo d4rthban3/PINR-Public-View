@@ -29,12 +29,45 @@ final class FeedStore {
     private(set) var firstPage: [Token] = []
     /// The rest of the scored set from the last whole sweep (or the pages so far, on the first sweep).
     private(set) var rest: [Token] = []
-    /// Every token once: the first page, then the rest without the ones already on it. Kept ready, rebuilt only
-    /// when either list changes, so screens never rebuild 8,000 tokens on every redraw.
-    private(set) var all: [Token] = []
+    /// Every token once: the first page, then the rest without the ones already on it. Built when first read after either
     //
-    /// 44,000-entry dictionary on every redraw, 27 ms).
+    /// message that moved a coin on or off the first page was most of the store's idle cost).
+    var all: [Token] {
+        // Both lists are read every time, so whoever reads `all` is told when either changes.
+        let first = firstPage, rest = rest
+        if let allCache { return allCache }
+        let seen = Set(first.map(\.id))
+        let list = first + rest.filter { !seen.contains($0.id) }
+        allCache = list
+        return list
+    }
+    @ObservationIgnored private var allCache: [Token]?
+    /// No token at all yet (`all.isEmpty`, without building `all`).
+    var isEmpty: Bool { firstPage.isEmpty && rest.isEmpty }
+    //
+    /// 44,000-entry dictionary on every redraw, 27 ms). A stream message changes only the entries it touched.
     private(set) var byId: [String: Token] = [:]
+    /// Counts each change of `all` and `byId`. Watch this, not `all`: an `onChange(of: all)` keeps the old 44,000 coins to compare
+    //
+    private(set) var rev = 0
+    /// One box per coin a screen shows, kept equal to its `byId` entry: a tile reads its own box, so one coin's price change
+    //
+    @ObservationIgnored private var boxes: [String: CoinBox] = [:]
+    /// The box for one coin, made the first time it is asked for. It reads `byId` without being told of its changes.
+    func box(_ id: String) -> CoinBox {
+        if let b = boxes[id] { return b }
+        let b = CoinBox(_byId[id])
+        boxes[id] = b
+        return b
+    }
+    private func setById(_ id: String, _ t: Token?) {
+        byId[id] = t
+        if let b = boxes[id], b.token != t { b.token = t }
+    }
+    /// The rest by id and by place, and the first page's ids, kept with the lists so a stream message never re-indexes the 44,000.
+    @ObservationIgnored private var restById: [String: Token] = [:]
+    @ObservationIgnored private var restAt: [String: Int] = [:]
+    @ObservationIgnored private var firstIds: Set<String> = []
     /// How many of the rest have been read, and how many the feed says there are.
     private(set) var restLoaded = 0
     private(set) var restTotal: Int?
@@ -45,6 +78,8 @@ final class FeedStore {
     /// folds the ones of its own coin it has not seen (those after its own count) into its candles.
     private(set) var recentTicks: [LiveTick] = []
     private(set) var tickCount = 0
+    //
+    @ObservationIgnored let realTrades = RealTrades()
     /// Whether the change stream is open now (false: the app is on the fallback polls).
     private(set) var streaming = false
     /// Each token's score change since the app first saw it (for the Movers filter). A token
@@ -73,13 +108,18 @@ final class FeedStore {
         self.pageDelay = pageDelay
     }
 
-    /// Called whenever the first page or the rest gains, loses or replaces coins as a set. A stream message that only
-    /// changes the figures of coins already on the first page skips it (see `applyChanges`).
+    /// Called when a whole list is read again (a poll, a sweep, a refused contract). A stream message updates in place instead
+    /// (see `applyChanges`).
     private func rebuildAll() {
-        let seen = Set(firstPage.map(\.id))
-        let list = firstPage + rest.filter { !seen.contains($0.id) }
-        all = list
-        byId = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        firstIds = Set(firstPage.map(\.id))
+        restById = Dictionary(rest.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        restAt = Dictionary(rest.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { _, b in b })
+        var ids = restById
+        for t in firstPage.reversed() { ids[t.id] = t }
+        byId = ids
+        for (id, b) in boxes where b.token != ids[id] { b.token = ids[id] }
+        allCache = nil
+        rev += 1
     }
 
     // MARK: - Finding one coin by its address
@@ -87,16 +127,22 @@ final class FeedStore {
     /// A coin by its exact address: from the lists if it is there, else asked of the feed (`/api/token/find`; a quiet coin comes back
     /// marked quiet). Nil for an unknown address or a hidden copy.
     func find(_ address: String) async -> Token? {
+        await findWhy(address).token
+    }
+
+    //
+    func findWhy(_ address: String) async -> (token: Token?, notice: String?) {
         let id = address.lowercased()
-        if let t = byId[id] ?? found[id] { return t }
-        guard CoinAddress.isAddress(address), let baseURL else { return nil }
+        if let t = byId[id] ?? found[id] { return (t, nil) }
+        guard CoinAddress.isAddress(address), let baseURL else { return (nil, nil) }
         var url = baseURL.appending(path: "api/token/find")
         url.append(queryItems: [URLQueryItem(name: "address", value: address)])
-        struct Answer: Decodable { let token: WireToken? }
-        guard let (answer, _, _, _) = try? await Self.fetch(session, url, Answer.self), let w = answer.token else { return nil }
-        guard case .success(let t) = Token.make(from: w, feedBase: baseURL) else { return nil }
+        struct Answer: Decodable { let token: WireToken?; let hidden: Bool?; let notice: String? }
+        guard let (answer, _, _, _) = try? await Self.fetch(session, url, Answer.self) else { return (nil, nil) }
+        guard let w = answer.token else { return (nil, answer.hidden == true ? answer.notice : nil) }
+        guard case .success(let t) = Token.make(from: w, feedBase: baseURL) else { return (nil, nil) }
         found[t.id] = t
-        return t
+        return (t, nil)
     }
 
     // MARK: - Reading
@@ -293,6 +339,7 @@ final class FeedStore {
             case .applied(let changed, let gone, let restRows, let restGone, let ticks):
                 applyChanges(changed: changed, gone: gone, restRows: restRows, restGone: restGone)
                 foldTrades(ticks)
+                for t in ticks { realTrades.hear(t) }
                 if !ticks.isEmpty {
                     tickCount += ticks.count
                     recentTicks = Array((recentTicks + ticks).suffix(300))
@@ -328,9 +375,13 @@ final class FeedStore {
         let page = copy.order.compactMap { firstTokens[$0] }
         if page.count != firstPage.count { sameSet = false }
         firstPage = page
+        var restChanged: [Token] = []
         if !restRows.isEmpty || !restGone.isEmpty {
+            // Taken out of the store while they change, so neither the 44,000 nor their index is copied.
             var next = rest
-            var at = Dictionary(next.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { _, b in b })
+            rest = []
+            var at = restAt
+            restAt = [:]
             var fresh: [Token] = []
             for row in restRows {
                 guard let wire = StreamCopy.wire(row), case .success(let t) = Token.make(from: wire, feedBase: baseURL) else { continue }
@@ -340,22 +391,35 @@ final class FeedStore {
                     at[t.id] = next.count + fresh.count
                     fresh.append(t)
                 }
+                restById[t.id] = t
+                restChanged.append(t)
             }
             next += fresh
             if !restGone.isEmpty {
                 let goneSet = Set(restGone)
                 next.removeAll { goneSet.contains($0.id) }
+                for id in restGone { restById[id] = nil }
+                at = Dictionary(next.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { _, b in b })
             }
             noteScores(fresh)
             rest = next
+            restAt = at
         }
         if sameSet {
             // Only figures changed on coins already on the first page: swap them in place, no rebuild of the 44,000.
-            all.replaceSubrange(0 ..< page.count, with: page)
-            for t in touched { byId[t.id] = t }
+            allCache?.replaceSubrange(0 ..< page.count, with: page)
+            for t in touched { setById(t.id, t) }
         } else {
-            rebuildAll()
+            // Only the entries this message touched change; `all` is built again when next read.
+            allCache = nil
+            let ids = Set(page.map(\.id))
+            for id in firstIds.subtracting(ids) { setById(id, restById[id]) }
+            for t in restChanged where !ids.contains(t.id) { setById(t.id, t) }
+            for id in restGone where !ids.contains(id) { setById(id, restById[id]) }
+            for t in page.reversed() { setById(t.id, t) }
+            firstIds = ids
         }
+        rev += 1
         lastHeard = Date()
     }
 
@@ -371,8 +435,9 @@ final class FeedStore {
         guard !changed.isEmpty else { return }
         for (id, t) in changed { firstTokens[id] = t }
         firstPage = firstPage.map { changed[$0.id] ?? $0 }
-        all.replaceSubrange(0 ..< min(firstPage.count, all.count), with: firstPage)
-        for (id, t) in changed { byId[id] = t }
+        if let n = allCache?.count { allCache?.replaceSubrange(0 ..< min(firstPage.count, n), with: firstPage.prefix(n)) }
+        for (id, t) in changed { setById(id, t) }
+        rev += 1
     }
 
     // MARK: - Helpers
@@ -439,4 +504,12 @@ final class FeedStore {
         restTotal = nil
         state = .mismatch(contract: contract)
     }
+}
+
+/// One coin as a screen shows it (see `FeedStore.box`). The store sets it only when the coin changed.
+@MainActor
+@Observable
+final class CoinBox {
+    var token: Token?
+    init(_ token: Token?) { self.token = token }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -53,6 +55,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -98,8 +101,19 @@ fun PinrApp(store: FeedStore, openLink: String? = null, onLinkOpened: () -> Unit
     //
     var dQuery by rememberSaveable { mutableStateOf("") }
     var dTab by rememberSaveable { mutableStateOf(io.pinr.app.feed.DiscoverTab.List) }
-    camera.capture = { Screen(camera.room, if (camera.room == Room.Terminal) selected else null, listKey, dQuery, dTab) }
-    camera.restore = { s -> listKey = s.listKey; dQuery = s.query; dTab = s.tab; s.coin?.let { selected = it } }
+    val scrolls = remember { Scrolls() }
+    camera.capture = { Screen(camera.room, if (camera.room == Room.Terminal) selected else null, listKey, dQuery, dTab, scrolls.read(camera.room)) }
+    camera.restore = { s -> listKey = s.listKey; dQuery = s.query; dTab = s.tab; s.coin?.let { selected = it }; s.scroll?.let { scrolls.restore(s.room, it) } }
+    //
+    // sections) lands a moment after it is shown, so the place is set again once it has.
+    LaunchedEffect(camera.room, scrolls.seq) {
+        val room = camera.room
+        val place = scrolls.take(room)
+        // The room is drawn once on the moving map and again in place when the camera settles, with its list empty for a moment: the
+        // place is set once it is in place (apply then waits for the saved item).
+        androidx.compose.runtime.snapshotFlow { camera.settled }.first { it }
+        if (camera.room == room) scrolls.apply(room, place)
+    }
     val feed by store.data.collectAsState()
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val watch = remember { WatchStore(ctx) }
@@ -120,11 +134,15 @@ fun PinrApp(store: FeedStore, openLink: String? = null, onLinkOpened: () -> Unit
     // The header's PINR GUIDE button offers the guide or the Whitepaper; each is a full page over the view.
     var choosing by remember { mutableStateOf(false) }
     var page by remember { mutableStateOf<String?>(null) }
+    //
+    var linkNote by remember { mutableStateOf<String?>(null) }
     val client = remember(store) { CoinClient(store.baseUrl) }
     // A link to one coin (`pinr://coin/<address>`, or the site's `?coin=<address>`) opens that coin's page.
     LaunchedEffect(openLink) {
         val address = CoinAddress.parse(openLink) ?: return@LaunchedEffect
-        store.find(address)?.let { selected = it.id; camera.go(Room.Terminal) }
+        val (t, notice) = store.findWhy(address)
+        if (t != null) { linkNote = null; selected = t.id; camera.go(Room.Terminal) }
+        else linkNote = CoinAddress.linkNote(notice, address)
         onLinkOpened()
     }
     // Price alerts are checked against each new reading of the feed, while PINR is open (as on the site).
@@ -154,14 +172,14 @@ fun PinrApp(store: FeedStore, openLink: String? = null, onLinkOpened: () -> Unit
         WorldView(camera, clipTop, clipBottom) { r ->
             val openCoin: (io.pinr.app.feed.Token) -> Unit = { selected = it.id; camera.go(Room.Terminal) }
             when {
-                r == Room.Pinr -> PinrRoom(feed, listKey, insets, openCoin, onList = { listKey = it })
+                r == Room.Pinr -> PinrRoom(feed, listKey, insets, openCoin, onList = { listKey = it }, grid = scrolls.pinr)
                 r == Room.Arena -> ArenaRoom(insets, onOpen = openCoin)
-                r == Room.Discover -> DiscoverRoom(feed, client, insets, listKey, { listKey = it }, openCoin, dTab, { dTab = it }, dQuery, { dQuery = it })
+                r == Room.Discover -> DiscoverRoom(feed, client, insets, listKey, { listKey = it }, openCoin, dTab, { dTab = it }, dQuery, { dQuery = it }, list = scrolls.discover)
                 r == Room.Wallet -> WalletRoom(choices, client, feed.byId, insets, openCoin)
                 r == Room.Terminal -> {
                     // The last coin opened anywhere; a coin no longer in the feed says so.
                     val t = selected?.let { feed.byId[it] ?: store.found[it] }
-                    if (t != null) CoinPage(t, choices.visible(feed.all), client, watch, insets, onOpen = { camera.step(); selected = it.id }, onHide = { choices.hide(it); selected = null; camera.back() })
+                    if (t != null) CoinPage(t, choices.visible(feed.all), client, watch, insets, onOpen = { camera.step(); selected = it.id }, onHide = { choices.hide(it); selected = null; camera.back() }, scroll = scrolls.coin)
                     else TerminalEmpty(selected != null, insets)
                 }
                 r.isAd -> AdRoom(r, insets)
@@ -189,11 +207,24 @@ fun PinrApp(store: FeedStore, openLink: String? = null, onLinkOpened: () -> Unit
                 style = TextStyle(color = Brand.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
             )
         }
+        //
+        linkNote?.let { n ->
+            BasicText(
+                n,
+                Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = clipBottom + 10.dp)
+                    .shadow(14.dp, RoundedCornerShape(22.dp))
+                    .background(Brand.panel, RoundedCornerShape(22.dp)).border(1.dp, Brand.fg.copy(alpha = 0.14f), RoundedCornerShape(22.dp))
+                    .clickable { linkNote = null }.heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 10.dp)
+                    .semantics { contentDescription = "$n. Tap to close." }.testTag("link-note"),
+                style = TextStyle(color = Brand.paper, fontSize = 14.sp, fontWeight = FontWeight.Medium),
+            )
+        }
         panel?.let { p ->
             Panel(
                 p, feed, listKey, onFilter = { listKey = it; panel = null; camera.go(Room.Pinr) }, onClose = { panel = null },
                 onRoom = { panel = null; camera.go(it) }, onMap = { panel = null; if (!camera.map) camera.toggleMap() },
                 onSettings = { panel = null; settings = true }, onGuideRow = { panel = null; choosing = true }, onDiagnostics = { panel = HeaderPanel.Diagnostics },
+                choices = choices,
             )
         }
         if (settings) SettingsPanel(choices, feed) { settings = false }
@@ -220,6 +251,7 @@ fun statusText(s: FeedState): String = when (s) {
 private fun Panel(
     p: HeaderPanel, feed: FeedData, listKey: String, onFilter: (String) -> Unit, onClose: () -> Unit,
     onRoom: (Room) -> Unit, onMap: () -> Unit, onSettings: () -> Unit, onGuideRow: () -> Unit, onDiagnostics: () -> Unit,
+    choices: ChoicesStore,
 ) {
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))
@@ -270,6 +302,15 @@ private fun Panel(
                             BasicText(PinrFilter.PinrScore.hint, style = body)
                         }
                         if (listKey.isEmpty()) Box(Modifier.size(6.dp).background(Brand.lime, CircleShape))
+                    }
+                    //
+                    Row(Modifier.fillMaxWidth().clickable { choices.switchMayhem(!choices.showMayhem) }.padding(vertical = 6.dp).testTag("show-mayhem")
+                        .semantics { stateDescription = if (choices.showMayhem) "On" else "Off" }, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            BasicText("Show Mayhem", style = TextStyle(color = if (choices.showMayhem) Brand.lime else Brand.paper, fontSize = 15.sp, fontWeight = FontWeight.Medium))
+                            BasicText("Coins labelled MAYHEM; left out by default", style = body)
+                        }
+                        if (choices.showMayhem) Box(Modifier.size(6.dp).background(Brand.lime, CircleShape))
                     }
                 }
                 HeaderPanel.Diagnostics -> {
@@ -329,8 +370,8 @@ fun pipelineRows(f: FeedData): List<Triple<String, String, Color?>> {
     val all = f.all
     val rows = mutableListOf<Triple<String, String, Color?>>(
         Triple("Tokens found", all.size.toString(), null),
-        Triple("Scored", all.count { it.label == null && it.coverage > 0 && it.score != null }.toString(), Brand.lime),
-        Triple("Launchpad coins, not scored yet", all.count { it.label == null && it.coverage <= 0 && it.note == null }.toString(), null),
+        Triple("Token health read", all.count { it.label == null && it.coverage > 0 && it.score != null }.toString(), Brand.lime),
+        Triple("Launchpad coins, no health reading yet", all.count { it.label == null && it.coverage <= 0 && it.note == null }.toString(), null),
     )
     io.pinr.app.feed.NoScoreLabel.entries.forEach { l -> all.count { it.label == l }.takeIf { it > 0 }?.let { rows += Triple("Label observed: ${l.text}", it.toString(), Brand.mandarin) } }
     return rows

@@ -68,7 +68,7 @@ import kotlinx.coroutines.withContext
  * once the whole scored set has been read); each tile's own figures stay live.
  */
 @Composable
-fun PinrRoom(feed: FeedData, listKey: String, basePadding: PaddingValues, onOpen: (Token) -> Unit, onList: (String) -> Unit = {}) {
+fun PinrRoom(feed: FeedData, listKey: String, basePadding: PaddingValues, onOpen: (Token) -> Unit, onList: (String) -> Unit = {}, grid: androidx.compose.foundation.lazy.grid.LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()) {
     //
     val contentPadding = PaddingValues(top = basePadding.calculateTopPadding() + LP_PILLS_H, bottom = basePadding.calculateBottomPadding())
     var order by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -105,7 +105,7 @@ fun PinrRoom(feed: FeedData, listKey: String, basePadding: PaddingValues, onOpen
         }
     }
     // Hiding a coin, or showing them again, re-ranks at once.
-    LaunchedEffect(choices?.hidden) { if (order.isNotEmpty()) rerank() }
+    LaunchedEffect(choices?.hidden, choices?.showMayhem) { if (order.isNotEmpty()) rerank() }
     LaunchedEffect(wholeSetRead) { if (wholeSetRead && !rankedWholeSet) { rankedWholeSet = true; rerank() } }
 
     // One clock for every ribbon on the page, read only while drawing.
@@ -124,7 +124,7 @@ fun PinrRoom(feed: FeedData, listKey: String, basePadding: PaddingValues, onOpen
         tiles.isEmpty() && feed.all.isEmpty() -> Box(Modifier.fillMaxSize().padding(contentPadding), contentAlignment = Alignment.TopCenter) {
             if (feed.state is FeedState.Offline) Notice("Offline · ${(feed.state as FeedState.Offline).reason}", PaddingValues()) else Spinner(Modifier.padding(top = 120.dp))
         }
-        tiles.isEmpty() -> Notice(if (listKey.isNotEmpty()) "Nothing here right now." else "No scored coins yet.", contentPadding)
+        tiles.isEmpty() -> Notice(if (listKey.isNotEmpty()) "Nothing here right now." else "No coins with a health reading yet.", contentPadding)
         else -> BoxWithConstraints(Modifier.fillMaxSize()) {
             val perRow = if (maxWidth > maxHeight) 6 else 3
             val gap = 10.dp
@@ -132,6 +132,7 @@ fun PinrRoom(feed: FeedData, listKey: String, basePadding: PaddingValues, onOpen
             LazyVerticalGrid(
                 columns = GridCells.Fixed(perRow),
                 modifier = Modifier.fillMaxSize().testTag("pinr-grid"),
+                state = grid,
                 contentPadding = PaddingValues(
                     start = 10.dp, end = 10.dp,
                     top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding(),
@@ -182,8 +183,8 @@ fun HideMenu(t: Token, onHide: () -> Unit, onClose: () -> Unit) {
 
 private fun emptyTextUnused(f: PinrFilter): String = when (f) {
     PinrFilter.New -> "No coins under an hour old right now."
-    PinrFilter.Movers -> "No score has moved since the app opened."
-    PinrFilter.PinrScore -> "No scored coins yet."
+    PinrFilter.Movers -> "No token health reading has moved since the app opened."
+    PinrFilter.PinrScore -> "No coins with a health reading yet."
     PinrFilter.Trending -> "Nothing to show yet."
 }
 

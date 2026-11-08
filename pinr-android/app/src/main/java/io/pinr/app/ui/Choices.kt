@@ -28,9 +28,18 @@ class ChoicesStore(context: Context) {
         private set
     var streams by mutableStateOf(prefs.getBoolean("pinr.streams", true))
         private set
+    var showMayhem by mutableStateOf(prefs.getBoolean("pinr.showMayhem", false))
+        private set
 
     fun isHidden(t: Token) = t.id in hidden
-    fun visible(list: List<Token>): List<Token> = if (hidden.isEmpty()) list else list.filter { it.id !in hidden }
+    /** The list without the coins this person hid, and without the MAYHEM coins unless Show Mayhem is on. */
+    fun visible(list: List<Token>): List<Token> = visibleOf(list, hidden, showMayhem)
+
+    companion object {
+        /** The rule itself, apart from this phone's storage (so it is tested on its own). */
+        fun visibleOf(list: List<Token>, hidden: Set<String>, showMayhem: Boolean): List<Token> =
+            if (hidden.isEmpty() && showMayhem) list else list.filter { it.id !in hidden && (showMayhem || it.label != io.pinr.app.feed.NoScoreLabel.Mayhem) }
+    }
 
     fun hide(t: Token) = storeHidden(hidden + t.id)
     fun unhide(t: Token) = storeHidden(hidden - t.id)
@@ -43,6 +52,7 @@ class ChoicesStore(context: Context) {
 
     fun switchBackground(on: Boolean) { background = on; prefs.edit().putBoolean("pinr.background", on).apply() }
     fun switchStreams(on: Boolean) { streams = on; prefs.edit().putBoolean("pinr.streams", on).apply() }
+    fun switchMayhem(on: Boolean) { showMayhem = on; prefs.edit().putBoolean("pinr.showMayhem", on).apply() }
 
     /** Looks up an address; returns the site's message when it is not one. */
     fun viewWallet(raw: String): String? {

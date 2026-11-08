@@ -1,4 +1,4 @@
-import { isHidden, selectAndRank, sortBy, type SortDir } from "./filters";
+import { getHides, isHidden, selectAndRank, sortBy, type SortDir } from "./filters";
 import { isListFilter, rankList, type ListFilter } from "./lists";
 import type { Item } from "./model";
 import { visibleText } from "./visibletext";
@@ -22,7 +22,7 @@ const moveSize = (it: Item): number | null => (Number.isFinite(it.change24h) ? M
 
 export function rankDiscover(tab: DiscoverTab, all: readonly Item[], query: string, dir: SortDir = "default"): Item[] {
   // A search finds everything (even what the switches hide, so a token can always be looked up); the lists respect the switches.
-  const items = query.trim() ? all : all.filter((it) => !isHidden(it));
+  const items = query.trim() ? all : all.filter((it) => !isHidden(it, getHides(), "discover"));
   const q = visibleText(query).toLowerCase().replace(/^\$/, "");
   if (q) {
     return items
@@ -40,7 +40,7 @@ export function rankDiscover(tab: DiscoverTab, all: readonly Item[], query: stri
     const newAt = (it: Item): number => it.seenAtMs ?? (Number.isFinite(it.ageMin) ? nowMs - it.ageMin * 60_000 : -Infinity);
     list = items.filter((it) => TAB_CHAINS.includes((it.chain ?? "").toLowerCase())).sort((a, b) => newAt(b) - newAt(a) || a.id - b.id);
   } else if (tab === "movers") list = sortBy(items, moveSize, dir, "desc", (a, b) => a.id - b.id);
-  else list = selectAndRank(tab === "trending" ? "trending" : tab === "pinrscore" ? "pinrscore" : "new", items, DISCOVER_ROWS, Date.now(), dir).map((r) => byId.get(r.id)!);
+  else list = selectAndRank(tab === "trending" ? "trending" : tab === "pinrscore" ? "pinrscore" : "new", items, DISCOVER_ROWS, Date.now(), dir, "discover").map((r) => byId.get(r.id)!);
   return list.slice(0, DISCOVER_ROWS);
 }
 

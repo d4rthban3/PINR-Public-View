@@ -22,4 +22,12 @@ object CoinAddress {
         }
         return candidate?.takeIf { isAddress(it) }
     }
+
+    /*
+     *  not showing, else the site's line; with the address shortened as the site's ("2XZDLf…pump"). */
+    fun linkNote(notice: String?, address: String): String {
+        val short = if (address.length > 12) "${address.take(6)}…${address.takeLast(4)}" else address
+        val n = notice?.trim().orEmpty()
+        return if (n.isNotEmpty() && n.length <= 200) "$n ($short)" else "This coin is not on PINR's lists right now ($short)."
+    }
 }

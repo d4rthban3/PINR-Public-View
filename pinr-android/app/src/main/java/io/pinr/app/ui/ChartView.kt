@@ -260,12 +260,13 @@ fun TerminalChartCanvas(
             drawText(r, topLeft = Offset(w + 6.dp.toPx(), yy - r.size.height / 2))
         }
         clipRect(0f, 0f, w, h0) {
-            for (e in events) { val x = xt(e.t.toDouble()); drawLine(toneColor(e.tone).copy(alpha = 0.6f), Offset(x, 0f), Offset(x, h0), 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))) }
             when (kind) {
                 ChartKind.Line, ChartKind.Area -> {
-                    val path = Path().apply { c.forEachIndexed { i, k -> if (i == 0) moveTo(xt(k.t.toDouble()), py(k.close)) else lineTo(xt(k.t.toDouble()), py(k.close)) } }
+                    //
+                    val pts = io.pinr.app.feed.lineFromOpen(c, tStep)
+                    val path = Path().apply { pts.forEachIndexed { i, (t, v) -> if (i == 0) moveTo(xt(t), py(v)) else lineTo(xt(t), py(v)) } }
                     if (kind == ChartKind.Area) {
-                        val fill = Path().apply { addPath(path); lineTo(xt(c.last().t.toDouble()), h0); lineTo(xt(c.first().t.toDouble()), h0); close() }
+                        val fill = Path().apply { addPath(path); lineTo(xt(pts.last().first), h0); lineTo(xt(pts.first().first), h0); close() }
                         drawPath(fill, androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Brand.lime.copy(alpha = 0.28f), Brand.lime.copy(alpha = 0f)), 0f, h0))
                     }
                     drawPath(path, Brand.lime, style = Stroke(2.dp.toPx()))
@@ -285,6 +286,19 @@ fun TerminalChartCanvas(
             fun pd(p: Double) = py(p * axisK)
             for (d in drawings) drawDrawing(m, d, ::xt, ::pd, w, h0, d.id == selected, barSeconds)
             for (pp in pending) drawCircle(Brand.lime, 4.dp.toPx(), Offset(xt(pp.t), pd(pp.p)))
+            //
+            // A chart of a day or less says the clock time; a longer one the date too (as the site).
+            val clockFmt = java.text.SimpleDateFormat(if (c.last().t - c.first().t <= 36 * 3600) "h:mm a" else "MMM d, h:mm a", Locale.US)
+            for (mk in io.pinr.app.feed.EventMarks.marks(events, c, tStep.toLong()) { clockFmt.format(Date(it * 1000)) }) {
+                val x = xt(mk.t.toDouble()); val y = py(mk.price); val col = Brand.violet
+                drawCircle(col, 3.5.dp.toPx(), Offset(x, y))
+                val r = m.measure(mk.text, TextStyle(color = Brand.violetWords, fontSize = 9.sp, fontFamily = FontFamily.Monospace))
+                val ly = (if (mk.tone == "bad") y - 6.dp.toPx() - r.size.height else y + 6.dp.toPx()).coerceIn(0f, max(0f, h0 - r.size.height))
+                val lx = (x - r.size.width / 2).coerceIn(0f, max(0f, w - r.size.width))
+                // A backing so the words read over the candles and the price line.
+                drawRoundRect(Brand.ink.copy(alpha = 0.82f), Offset(lx - 3.dp.toPx(), ly), Size(r.size.width + 6.dp.toPx(), r.size.height.toFloat()), CornerRadius(4.dp.toPx()))
+                drawText(r, topLeft = Offset(lx, ly))
+            }
         }
         val up = last.close >= last.open; val lc = if (up) Brand.lime else Brand.mandarin
         val ly = py(last.close)

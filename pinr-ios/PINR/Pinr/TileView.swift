@@ -5,7 +5,7 @@ import SwiftUI
 @Observable
 final class PinrPrefs {
     //
-    /// PINRscore filter (`filter`) is the one on.
+    /// Token health filter (`filter`) is the one on.
     var list: ListChoice? = Lists.defaultChoice
     var filter: PinrFilter = .pinrscore
     //
@@ -72,7 +72,7 @@ struct TileView: View, Equatable {
                 }
                 .padding(.top, 6 * k)
             }
-            RibbonView(ribbon: Ribbon(token.flow), dash: 2.2 * k, tileHeight: width * 1.52)
+            RibbonView(token: token, dash: 2.2 * k, tileHeight: width * 1.52)
                 .frame(height: 12 * k)
                 .padding(.top, 2 * k)
             Spacer(minLength: 2)
@@ -89,9 +89,9 @@ struct TileView: View, Equatable {
 
     private var spoken: String {
         var parts = [Format.title(token), Format.ticker(token)]
-        if let label = token.label { parts.append("labelled \(label.rawValue), no score") }
-        else if let s = token.score { parts.append("PINRscore \(s), coverage \(Format.coverage(token.coverage))") }
-        else { parts.append(Ranking.isRead(token) ? "no score" : "not scored yet") }
+        if let label = token.label { parts.append("labelled \(label.rawValue), no health reading") }
+        else if let s = token.score { parts.append("Token health \(s), coverage \(Format.coverage(token.coverage))") }
+        else { parts.append(Ranking.isRead(token) ? "no health reading" : "no health reading yet") }
         if token.label == nil {
             parts.append("market cap \(Format.usdCompact(token.valuationUsd))")
             if let ath = token.athUsd { parts.append("all-time high \(Format.usdCompact(ath))") }
@@ -201,9 +201,9 @@ struct CoverageStack: View {
                         .minimumScaleFactor(0.6).padding(.top, 1)
                 }
             } else {
-                // The site's unscored tile (cards.ts): a dash where the percentage goes, and the word "unscored".
+                // The site's unscored tile (cards.ts): a dash where the percentage goes, and the word "unread".
                 Text(Format.dash).font(Typo.fmono(size, .medium)).foregroundStyle(Brand.paper.opacity(0.85))
-                Text("unscored").font(Typo.fmono(size * 0.74)).foregroundStyle(Brand.mute)
+                Text("unread").font(Typo.fmono(size * 0.74)).foregroundStyle(Brand.mute)
             }
         }
         .lineLimit(1)
@@ -243,41 +243,37 @@ struct CoverageLine: View {
                 Text(Format.coverage(token.coverage)).font(Typo.fmono(11)).foregroundStyle(Brand.mute).monospacedDigit()
             }
         } else {
-            Text("Not scored yet").font(.caption2).foregroundStyle(Brand.mute)
+            Text("No health reading yet").font(.caption2).foregroundStyle(Brand.mute)
         }
     }
 }
 
-/// The ribbon in the site's look (flow.ts, streams.ts): short trade streaks, lime for buys and mandarin for sells,
-/// riding toward "now" at the right, spread a little up and down the band; bigger trades more solid, never thicker.
-/// Still under reduced motion; nothing when the coin had no trades in the last hour.
+/// The ribbon in the site's look (flow.ts, streams.ts): one dot for each real trade the app heard, lime for buys and mandarin for sells,
+//
+/// a coin with no trade heard lately draws nothing, still and level. Still under reduced motion.
 struct RibbonView: View {
-    let ribbon: Ribbon?
+    let token: Token
     var dash: CGFloat = 3
     //
     var tileHeight: CGFloat = 130
     //
     var leanRange: CGFloat? = nil
+    @Environment(FeedStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: ribbon == nil || reduceMotion)) { timeline in
+        let ribbon = store.realTrades.isReal(token.address) ? Ribbon(token.flow) : nil
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
             Canvas { ctx, size in
-                guard let ribbon else { return }
-                let t = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
-                //
-                // line and a sell below it, up to 17% of the tile's height, swooping a further 60% in the last 18% of the ribbon; real trades
-                // are drawn solid (size is no longer opacity), a mix counted in trades is faint and near the line.
+                // Read each frame, not observed: a burst of trades redraws only this canvas (345a). Nothing heard lately: nothing drawn.
+                let trades = store.realTrades.trades(token.address)
+                if trades.isEmpty || reduceMotion { return }
                 let mid = size.height / 2
-                for i in 0..<10 {
-                    let s = ribbon.streak(i, at: t)
-                    let lane = Ribbon.lane(i)
-                    let w = dash * (0.5 + 0.9 * lane.size)
-                    let sz = ribbon.isCount ? lane.size * 0.5 * 0.5 : lane.size
-                    let y = mid + Ribbon.sizeOffset(sz, buy: s.buy, u: s.u) * tileHeight + (lane.y - 0.5) * dash * 1.2 - dash * 0.275
-                    let rect = CGRect(x: s.u * (size.width + w) - w, y: y, width: w, height: dash * 0.55)
-                    ctx.fill(Path(roundedRect: rect, cornerRadius: rect.height / 2),
-                             with: .color((s.buy ? Brand.lime : Brand.mandarin).opacity(ribbon.isCount ? 0.35 : 0.95)))
+                for d in Ribbon.dots(trades, now: timeline.date) {
+                    let w = dash * (0.5 + 0.9 * d.size)
+                    let y = mid + Ribbon.sizeOffset(d.size, buy: d.buy, u: d.u) * tileHeight + (d.y - 0.5) * dash * 1.2 - dash * 0.275
+                    let rect = CGRect(x: d.u * (size.width + w) - w, y: y, width: w, height: dash * 0.55)
+                    ctx.fill(Path(roundedRect: rect, cornerRadius: rect.height / 2), with: .color((d.buy ? Brand.lime : Brand.mandarin).opacity(0.95)))
                 }
             }
         }

@@ -43,6 +43,7 @@ struct CoinPage: View {
             .safeAreaPadding(.top, insets.top)
             .safeAreaPadding(.bottom, insets.bottom)
             .scrollIndicators(.hidden)
+            .remembersScroll(.terminal)
             .refreshable { async let h: Void = loadHub(); await loadDossier(); await h }
         }
         .task(id: token.id) { dossier = nil; hub = nil; hubLoaded = false; tvSymbol = nil; async let t: Void = loadTV(); async let h: Void = loadHub(); await loadDossier(); await h; await t }
@@ -270,19 +271,30 @@ private struct TerminalChart: View {
             let c = set.shown
             let last = c.last!.close
             Chart {
-                ForEach(c, id: \.time) { k in
-                    if candles {
+                if candles {
+                    ForEach(c, id: \.time) { k in
                         RuleMark(x: .value("t", k.time), yStart: .value("l", k.low), yEnd: .value("h", k.high))
                             .foregroundStyle(k.close >= k.open ? Brand.lime : Brand.mandarin).lineStyle(StrokeStyle(lineWidth: 1))
                         RectangleMark(x: .value("t", k.time), yStart: .value("o", min(k.open, k.close)), yEnd: .value("c", max(k.open, k.close)),
                                       width: .fixed(max(1.5, 260 / Double(c.count))))
                             .foregroundStyle(k.close >= k.open ? Brand.lime : Brand.mandarin)
-                    } else {
-                        LineMark(x: .value("t", k.time), y: .value("c", k.close)).foregroundStyle(Brand.lime)
+                    }
+                } else {
+                    //
+                    ForEach(lineFromOpen(c, bucket: bucket(set))) { p in
+                        LineMark(x: .value("t", p.time), y: .value("c", p.price)).foregroundStyle(Brand.lime)
                     }
                 }
-                ForEach(events.filter { e in c.first.map { e.time >= $0.time } ?? false }) { e in
-                    RuleMark(x: .value("e", e.time)).foregroundStyle(toneColor(e.tone).opacity(0.6)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                //
+                ForEach(EventMark.marks(events, candles: c, bucket: set.bucketSec ?? (c.count > 1 ? c[1].time.timeIntervalSince(c[0].time) : 60))) { m in
+                    //
+                    PointMark(x: .value("t", m.time), y: .value("p", m.price)).foregroundStyle(Brand.violet).symbolSize(28)
+                        .annotation(position: m.tone == "bad" ? .top : .bottom, spacing: 2,
+                                    overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
+                            Text(m.text).font(Typo.mono(8.5)).foregroundStyle(Brand.violetWords).fixedSize()
+                                .padding(.horizontal, 4).padding(.vertical, 1)
+                                .background(RoundedRectangle(cornerRadius: 4).fill(Color(uiColor: .systemBackground).opacity(0.85)))
+                        }
                 }
                 RuleMark(y: .value("last", last)).foregroundStyle(Brand.mandarin.opacity(0.8)).lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
                     .annotation(position: .trailing, alignment: .center, spacing: 2) {
@@ -292,6 +304,7 @@ private struct TerminalChart: View {
             }
             // The site's terminal chart keeps a linear price axis (the log rule is the lite chart's only).
             .chartYScale(domain: range, type: .linear)
+            .lineDomain(lineSpan(set))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Price chart, \(tf.rawValue) candles\(set.asOfText.map { ", \($0)" } ?? ""). Last price \(Format.price(last)). High \(Format.price(c.map(\.high).max())), low \(Format.price(c.map(\.low).min())).")
             .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { _ in
@@ -311,12 +324,26 @@ private struct TerminalChart: View {
         }
     }
 
+    /// The candle size: the feed's, or the gap between the first two candles.
+    private func bucket(_ set: CandleSet) -> Double {
+        let c = set.shown
+        return set.bucketSec ?? (c.count > 1 ? c[1].time.timeIntervalSince(c[0].time) : 60)
+    }
+
+    //
+    /// both charts stay lined up. Nil in candle mode: both keep their automatic span, as before.
+    private func lineSpan(_ set: CandleSet) -> ClosedRange<Date>? {
+        guard !candles, let f = set.shown.first, let l = set.shown.last else { return nil }
+        return f.time.addingTimeInterval(-max(1, bucket(set)) / 2)...l.time
+    }
+
     private func volume(_ set: CandleSet) -> some View {
         Chart(set.shown, id: \.time) { k in
             BarMark(x: .value("t", k.time), y: .value("v", k.volume), width: .fixed(max(1, 230 / Double(set.shown.count))))
                 .foregroundStyle((k.close >= k.open ? Brand.lime : Brand.mandarin).opacity(0.55))
         }
         .chartXAxis(.hidden)
+        .lineDomain(lineSpan(set))
         .chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: 2)) { v in
             AxisValueLabel { if let d = v.as(Double.self) { Text(Format.usdCompact(d).dropFirst()).font(Typo.mono(9)).foregroundStyle(Brand.mute) } } } }
     }
@@ -413,5 +440,12 @@ private struct AlertSheet: View {
             Spacer()
         }
         .padding(20)
+    }
+}
+
+private extension View {
+    //
+    @ViewBuilder func lineDomain(_ span: ClosedRange<Date>?) -> some View {
+        if let span { chartXScale(domain: span) } else { self }
     }
 }
