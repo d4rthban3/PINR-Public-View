@@ -6,11 +6,12 @@ import "./style.css";
 //
 applyHubSwitch();
 import { look, onLook, startTheme } from "./ui/theme";
-import { arenaAnswerTaken, getSort, setCopyWinners, setRoster, type Filter } from "./world/filters";
+import { arenaAnswerTaken, getListMore, getRoster, getSort, isHidden, setCopyWinners, setListMore, setRoster, type Filter } from "./world/filters";
 import { NavTrail, navTrail, type NavEntry } from "./world/navtrail";
 import { readChartEvents, type ChartEvent } from "./world/chartevents";
-import { fetchEvidenceRetrying } from "./world/evidencefetch";
-import { DEFAULT_LIST, isListFilter, setOwnLists } from "./world/lists";
+import { fetchEvidenceState, noteUntracked } from "./world/evidencefetch";
+import { NOT_TRACKED } from "./ui/orbit";
+import { DEFAULT_LIST, isListFilter, isOwnList, setOwnLists } from "./world/lists";
 startTheme();
 import { Camera, type View } from "./engine/camera";
 import { attachInput } from "./engine/input";
@@ -28,11 +29,14 @@ const PHONE_TILE_TALL = 1.52;
 import { createHeader } from "./ui/header";
 import { createBgLayers } from "./ui/bglayers";
 import { LP_ROW_BOTTOM, LP_ROW_BOTTOM_PHONE } from "./ui/lppills";
-import { createPageStatement, groupCounts, STATE_H, STATE_H_PHONE } from "./ui/pagestatement";
-import { GROUP_ROW, GROUP_ROW_PHONE } from "./ui/grouppills";
+import { groupCounts } from "./ui/pagestatement";
+import { createPageEvents } from "./ui/pageevents";
+import { readGroups, totalsToShow, totalsUrl, type RawGroups } from "./world/grouptotals";
+import type { GroupCounts } from "./ui/grouppills";
+import { GROUP_ROW, GROUP_ROW_PHONE, GROUPS_IN_ROW_FROM } from "./ui/grouppills";
 import { createTabBar } from "./ui/tabbar";
-import { createMapZoom, ZOOM_STEP_VZ } from "./ui/mapzoom";
 import { createPages } from "./ui/pages";
+import { createMapPreviews, type ArenaPreviewGroup } from "./ui/mappreviews";
 import { createDiscover } from "./ui/discover";
 import { createCardFull } from "./ui/cardfull";
 import { createDeepScan } from "./ui/deepscan";
@@ -145,6 +149,52 @@ function rankingNeedsRest(f: Filter): boolean {
   return f !== "trending" || getSort("trending") !== "default";
 }
 if (rankingNeedsRest(DEFAULT_LIST)) liveFeed.wantRest();
+/**
+ *
+ * at least Discover's rows) join the store, then the page ranks again. The launchpads' own lists come whole already.
+ */
+const DISCOVER_LIST_ROWS = 100;
+/**
+ *
+ * coins in it, the list grows by a roster's worth and those coins are read; the view stays where it is (a grown list is not a new list).
+ */
+let listShownFor = "";
+let growingUntil = 0;
+/** The field's layout when the list last grew: the next growth waits for a newer one. */
+let grownAtLayout = -1;
+/** A re-layout before this time (a list grown or refreshed, not a new list) keeps the view where it is. */
+let keepViewUntil = 0;
+function growListAtEnd(f: string): void {
+  if (f !== listShownFor) {
+    listShownFor = f;
+    if (getListMore() !== 0) setListMore(0);
+  }
+  // A growth waits until the last one is laid out: each new one restarts the field's tile build (cards.ts), so growing every 1.5 s left it
+  // rebuilding for ever at about 400 tiles while the list kept loading (the inspector's stalled, faded view).
+  if (!isListFilter(f) || isOwnList(f) || Date.now() < growingUntil || field.layoutVersion === grownAtLayout) return;
+  const total = liveFeed.listTotal(f);
+  const shown = getRoster() + getListMore();
+  if (total === null || shown >= total) return;
+  const bottom = cam.screenToWorld(view.w / 2, view.h, view).y;
+  // Grown a screen before the end, by two rosters at a time: each growth lays the field out again (a short fade, cards.ts), so it comes rarely
+  // and before the visitor reaches the last card.
+  const screen = view.h / Math.max(1e-6, cam.scale);
+  if (bottom < bnd.bottom - screen) return;
+  growingUntil = Date.now() + 1500;
+  grownAtLayout = field.layoutVersion;
+  keepViewUntil = Date.now() + 10_000;
+  setListMore(getListMore() + 2 * getRoster());
+  field.grow(); // Look Cards' append mode: the new tiles are added below the last one, no fade, the shown ones untouched
+  loadListCoins(f);
+}
+function loadListCoins(f: string): void {
+  if (!isListFilter(f) || isOwnList(f)) return;
+  void liveFeed.loadList(f, Math.max(getRoster() + getListMore(), DISCOVER_LIST_ROWS), () => {
+    keepViewUntil = Date.now() + 10_000; // coins a list read brought in are added where they rank; the view stays put
+    field.grow(); // appended when they rank after the shown tiles (scroll loading); otherwise the field rebuilds as before
+    discover.refresh();
+  });
+}
 //
 liveFeed.onPrice((address, price, atMs, usd) => {
   coinPage.livePrice(address, price, atMs, usd);
@@ -220,15 +270,24 @@ const savePref = (key: string, on: boolean): void => {
     /* not saved; still works for this visit */
   }
 };
+/*
+ *  The animated version (the layers, the creeping SVG and the phone video) stays in the code, unused: set this to false to bring it back. */
+const BG_STILL = true;
 let bgEnabled = readPref("pinr.bg");
 let motionEnabled = readPref("pinr.motion");
 function syncBgPlayback(): void {
   if (!phoneBg.matches || lightBg()) {
     // Desktop width (and light mode at every width): the SVG teaser animates by itself; with the background switched off or motion reduced, the still frame stands instead.
-    const still = reduceMotion.matches || !bgEnabled;
+    const still = BG_STILL || reduceMotion.matches || !bgEnabled;
     //
     const stillSrc = lightBg() ? "/art/pinr-system-teaser-light-still.svg" : (bgVid.dataset.poster ?? "");
     bgLayers?.set(lightBg() ? "light" : "dark", still, stillSrc);
+    return;
+  }
+  if (BG_STILL) {
+    // Still: the video's first picture stands (it may have started on its own before the page's script ran).
+    bgVid.pause();
+    if (bgVid.currentTime > 0) bgVid.currentTime = 0;
     return;
   }
   if (document.hidden || reduceMotion.matches || !bgEnabled || off.has("video")) bgVid.pause();
@@ -296,19 +355,28 @@ function streamsState(): { text: string; on: boolean } {
   if (!motionEnabled) return { text: "OFF: switched off in Settings", on: false };
   const flowing = store.items.filter((i) => i.hasFlow).length;
   if (flowing === 0) return { text: "NONE: this data has no trades yet", on: false };
-  return { text: `ON for ${flowing} of ${store.items.length} tokens`, on: true };
+  return { text: `ON for ${flowing.toLocaleString("en-US")} coins`, on: true };
 }
 const streamsRow = (): { label: string; value: string; tone?: "warn" } => {
   const s = streamsState();
   return { label: "Buy/sell streaks", value: s.text, tone: s.on ? undefined : "warn" };
 };
 const count = (f: (i: (typeof store.items)[number]) => boolean): number => store.items.filter(f).length;
+function priceHistoryLine(): string {
+  const l = liveFeed.link().lines;
+  if (!l || !l.rows) return "—";
+  const by = Object.entries(l.bySource).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v.toLocaleString("en-US")}`).join(", ");
+  return `${l.drawn.toLocaleString("en-US")} of ${l.rows.toLocaleString("en-US")}${by ? ` · ${by}` : ""}`;
+}
 const header = createHeader({
   //
-  onGroup: (g) => field.setCoinGroup(g),
+  onGroup: (g) => ((pickedGroup = g), field.setCoinGroup(g)),
+  //
+  onQuickView: () => pageEvents.toggle(),
   // The header filter works on both PINR and Discover.
   onFilter: (f) => {
     if (rankingNeedsRest(f)) liveFeed.wantRest();
+    loadListCoins(f);
     field.setFilter(f);
     discover.setFilter(f);
   },
@@ -326,6 +394,7 @@ const header = createHeader({
   onRoster: (n) => {
     setRoster(n);
     field.relayout();
+    loadListCoins(header.filter());
   },
   // The Whitepaper opens only from its header symbol.
   dataNote: () => dataView().note,
@@ -365,7 +434,8 @@ const header = createHeader({
   },
   // Where every token stands in PINRbot's reading, counted live from the (simulated) feed.
   pipeline: () => [
-    { label: "Tokens found", value: String(store.items.length) },
+    //
+    { label: "Coins tracked", value: liveFeed.link().files ? liveFeed.link().files.toLocaleString("en-US") : "—" },
     { label: "Being read now", value: String(count((i) => i.status === "checking")) },
     { label: "Token health read", value: String(count((i) => i.status === "ok" && i.coverage > 0)), tone: "live" },
     { label: "Launchpad coins, no health reading yet", value: String(count((i) => i.status === "ok" && i.coverage <= 0 && i.note === null)) },
@@ -380,7 +450,8 @@ const header = createHeader({
       ...(liveFeed
         ? [
             { label: "Files not read", value: String(liveFeed.link().fileProblems) },
-            { label: "Price history", value: liveFeed.link().market ? `${liveFeed.link().market!.covered} of ${store.items.length} · ${liveFeed.link().market!.source}` : "off" },
+            // walk item 5: the served coins that draw a price line, by where the line came from (the server's count, not the coins this page holds)
+            { label: "Price history", value: priceHistoryLine() },
           ]
         : []),
       { label: "Average coverage", value: avg === null ? "—" : `${avg}%` },
@@ -398,15 +469,6 @@ const header = createHeader({
 
 let zoomWheelTimer: ReturnType<typeof setTimeout> | undefined;
 //
-const mapZoom = createMapZoom((dir) => {
-  cam.cancelHoming();
-  cam.anchorX = view.w / 2;
-  cam.anchorY = view.h / 2;
-  cam.vz += dir * ZOOM_STEP_VZ;
-  clearTimeout(zoomWheelTimer);
-  zoomWheelTimer = setTimeout(onZoomEnd, 450);
-});
-document.body.append(mapZoom.el);
 const whitepaper = createWhitepaper(() => {
   whitepaper.show(false);
   header.setPage(current);
@@ -428,6 +490,15 @@ function adSlotUnder(x: number, y: number): AdSlot | null {
   for (const s of document.querySelectorAll<HTMLElement>(`.page-${current} .adslot[data-slot]`)) {
     const r = s.getBoundingClientRect();
     if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return (AD_SLOTS as readonly string[]).includes(s.dataset.slot ?? "") ? (s.dataset.slot as AdSlot) : null;
+  }
+  return null;
+}
+function mapAdSlotUnder(x: number, y: number): AdSlot | null {
+  for (const s of document.querySelectorAll<HTMLElement>(".mp-slot")) {
+    const r = s.getBoundingClientRect();
+    if (r.width === 0 || x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+    const name = s.querySelector("b")?.textContent?.trim() ?? "";
+    return (AD_SLOTS as readonly string[]).includes(name) ? (name as AdSlot) : null;
   }
   return null;
 }
@@ -484,6 +555,7 @@ const discover = createDiscover({
   still: () => reduceMotion.matches || !motionEnabled,
   onFilter: (f) => {
     if (rankingNeedsRest(f)) liveFeed.wantRest();
+    loadListCoins(f);
     header.setFilter(f);
     field.setFilter(f);
   },
@@ -509,6 +581,15 @@ const discover = createDiscover({
     zoomWheelTimer = setTimeout(onZoomEnd, 180);
   },
 });
+//
+loadListCoins(header.filter());
+// The refresh reads only the list's top (a list grown far by scrolling is not read whole again every 30 s; its deeper coins stay in the store).
+// It does not lay the page out again: the tiles never reshuffle by themselves (filters.ts), and every re-layout fades the whole field (cards.ts,
+//
+setInterval(() => {
+  const f = header.filter();
+  if (isListFilter(f) && !isOwnList(f)) void liveFeed.loadList(f, Math.max(getRoster(), DISCOVER_LIST_ROWS));
+}, 30_000);
 document.getElementById("inner")!.append(discover.el);
 // Item 114: when Show Mayhem is switched, the feed takes the MAYHEM coins in or out on its next tick; a full PINR grid never reshuffles by
 // itself, so it is laid out again a frame later, and Discover read again, as the filter's other switches do.
@@ -609,6 +690,7 @@ async function fetchCandles(address: string, tf: TF): Promise<CandlesResult> {
 async function fetchTrades(address: string): Promise<TradesView | null> {
   try {
     const r = await fetch(`/api/trades?address=${encodeURIComponent(address)}`, { cache: "no-store" });
+    if (!r.ok) await noteUntracked(address, r); // walk item 3: a coin the feed does not track is said so once, not asked again
     return r.ok ? ((await r.json()) as TradesView) : null;
   } catch {
     return null;
@@ -642,6 +724,7 @@ async function fetchBudget(): Promise<{ status: "on" | "off"; usedPct: number; a
 async function fetchDossier(address: string): Promise<Dossier | null> {
   try {
     const r = await fetch(`/api/dossier?address=${encodeURIComponent(address)}`, { cache: "no-store" });
+    if (!r.ok) await noteUntracked(address, r);
     return r.ok ? ((await r.json()) as Dossier) : null;
   } catch {
     return null;
@@ -649,8 +732,10 @@ async function fetchDossier(address: string): Promise<Dossier | null> {
 }
 /*
  *  (the section keeps saying "loading"), and is null only when every try failed. */
-async function fetchEvidence(address: string): Promise<Evidence | null> {
-  return fetchEvidenceRetrying(address, (url) => fetch(url, { cache: "no-store" }));
+async function fetchEvidence(address: string): Promise<Evidence | null | typeof NOT_TRACKED> {
+  // Walk item 3: a coin the feed does not track is said so (the evidence web's NOT_TRACKED), not read again and again
+  const s = await fetchEvidenceState(address, (url) => fetch(url, { cache: "no-store" }));
+  return s.state === "ok" ? s.evidence : s.state === "untracked" ? NOT_TRACKED : null;
 }
 async function fetchEvents(address: string): Promise<ChartEvent[]> {
   try {
@@ -735,6 +820,10 @@ const arenaPage = createArenaPage({
 });
 document.getElementById("inner")!.append(arenaPage.el);
 //
+const mapPreviews = createMapPreviews(document.getElementById("inner")!);
+/** The Arena's battles as last read (once a minute, below), for its map preview. */
+let arenaGroupsNow: ArenaPreviewGroup[] = [];
+//
 // with its own Mayhem rule; the PINR page shows a Copy-tagged coin only while it leads. A flipped battle swaps the coin in at the next read.
 let lastBattles = 0;
 async function refreshCopyWinners(): Promise<void> {
@@ -743,6 +832,7 @@ async function refreshCopyWinners(): Promise<void> {
     if (!r.ok) return;
     const j = (await r.json()) as { groups?: import("../server/arena").ArenaGroup[] };
     const groups = j.groups ?? [];
+    if (groups.length) arenaGroupsNow = arenaShown(groups, moderation.showMayhem);
     // For about a minute and a half after the site restarts the Arena fills from nothing (0, then 1, then all its battles); an answer with under half
     // the battles of the last good one keeps the last leaders, so the PINR page never hides every other leader meanwhile (Build Inspector, 8 Nov).
     const take = arenaAnswerTaken(lastBattles, groups.length);
@@ -1069,6 +1159,7 @@ function layoutHome(): void {
   // runs on under the footer, as a website's page does. A phone keeps the room between the header and the footer, as the apps do.
   frames = pageFrames(gridWidth(across), (view.w < PHONE_WIDTH ? view.h - topInset - bottomInset : view.h) / scale);
   pages.setFrames(frames);
+  mapPreviews.setFrames(frames);
   // A page is as wide as its room is on screen at home zoom: the whole browser width, at every size, so it lines up with the room it stands in.
   document.documentElement.style.setProperty("--page-w", `${(frames.pinr.w * scale).toFixed(2)}px`);
   // A computer's room is the whole window tall but starts under the header, so its last (header + footer) is out of sight: the ad areas keep
@@ -1112,12 +1203,12 @@ function resize(): void {
   streams.resize(view.w, view.h, Math.min(dpr, STREAM_DPR));
   const hb = header.el.getBoundingClientRect();
   //
-  const grp = header.groupRowShown() ? (view.w < PHONE_WIDTH ? GROUP_ROW_PHONE : GROUP_ROW) : 0;
+  //
+  const grp = header.groupRowShown() && view.w < GROUPS_IN_ROW_FROM ? (view.w < PHONE_WIDTH ? GROUP_ROW_PHONE : GROUP_ROW) : 0;
   const lpBottom = hb.bottom + (view.w < PHONE_WIDTH ? LP_ROW_BOTTOM_PHONE : LP_ROW_BOTTOM) + grp;
   //
-  document.documentElement.style.setProperty("--ps-top", `${lpBottom + 2}px`);
-  document.documentElement.style.setProperty("--ps-h", `${view.w < PHONE_WIDTH ? STATE_H_PHONE : STATE_H}px`);
-  topInset = lpBottom + (view.w < PHONE_WIDTH ? STATE_H_PHONE : STATE_H) + GAP * homeScale();
+  document.documentElement.style.setProperty("--pe-top", `${lpBottom + 8}px`);
+  topInset = lpBottom + GAP * homeScale();
   //
   const tabTop = tabbar.top();
   bottomInset = view.h - tabTop + 10;
@@ -1273,8 +1364,11 @@ const release = (e: PointerEvent): void => {
   if (isMouse && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > MOVE_PX) moved = true;
   // Press and release on a room, without dragging or pinching: go there.
   if (e.type === "pointerup" && !moved && !multi && inMap()) {
-    const room = roomUnder(e.clientX, e.clientY);
-    if (room) goTo(room);
+    //
+    const slot = e.button === 0 ? mapAdSlotUnder(e.clientX, e.clientY) : null;
+    const room = slot ? null : roomUnder(e.clientX, e.clientY);
+    if (slot) openAdsApply(slot);
+    else if (room) goTo(room);
   }
   //
   else if (e.type === "pointerup" && e.button === 0 && !moved && !multi && !mapMode && !journey && current.startsWith("ad") && current !== "arena") {
@@ -1299,26 +1393,76 @@ stage.addEventListener("pointercancel", release);
 stage.addEventListener("pointerleave", () => letGo());
 
 attachInput(stage, cam, () => view, () => {}, onZoomEnd, () => holding);
+const pageEvents = createPageEvents();
+document.body.append(pageEvents.el);
+/** The tiles' inset changes (the group row appears): a page the visitor has not moved follows to its new home, a page they have scrolled keeps its place. */
+// True once the visitor has touched the page (a drag, a wheel turn): from then on the page keeps its scroll when the room above the tiles changes.
+let userMoved = false;
+for (const ev of ["pointerdown", "wheel"]) stage.addEventListener(ev, () => (userMoved = true), { passive: true });
+function changeInset(change: () => void): void {
+  const homeY = (): number => cameraFor(frames.pinr, view.h, topInset, homeScale()).y;
+  const wasHome = current === "pinr" && !journey && (!userMoved || Math.abs(cam.y - homeY()) < 2);
+  change();
+  sizedW = -1;
+  resize();
+  if (wasHome) {
+    cam.y = homeY();
+    cam.stopMotion();
+  }
+}
 //
-const pageStatement = createPageStatement();
-document.body.append(pageStatement.el);
+// arrived is null (no number), never a zero. A filter that is not one list (or a list the server does not know) falls back to the coins on screen, which are real counts of what shows.
+let pickedGroup: keyof GroupCounts | null = null; // the group pill picked now (null: none)
+let totalsKey = "";
+let totalsRaw: RawGroups | null = null;
+let totalsAt = 0;
+let totalsBusy = false;
+let totalsFailed = "";
+function shownGroupCounts(): GroupCounts {
+  const f = header.filter();
+  const url = totalsUrl(f);
+  if (!url || totalsFailed === f) return groupCounts(store.items);
+  if (!totalsBusy && (totalsKey !== f || Date.now() - totalsAt > 30_000)) {
+    totalsBusy = true;
+    void fetch(url, { cache: "no-store" })
+      .then(async (r) => {
+        const raw = r.ok ? readGroups(await r.json()) : null;
+        if (!raw) {
+          if (totalsKey !== f) totalsFailed = f;
+          return;
+        }
+        if (header.filter() === f) {
+          totalsRaw = raw;
+          totalsKey = f;
+          totalsAt = Date.now();
+          totalsFailed = "";
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        totalsBusy = false;
+      });
+  }
+  return totalsKey === f ? totalsToShow(totalsRaw, moderation.showMayhem) : { read: null, closer: null, partly: null, unchecked: null };
+}
 setInterval(() => {
   const on = current === "pinr" && !mapMode;
-  pageStatement.show(on);
+  if (!on && pageEvents.isOpen()) pageEvents.close();
   if (on) {
-    pageStatement.update(store.items, Date.now());
-    const wasShown = header.groupRowShown();
-    header.setGroupCounts(groupCounts(store.items));
+    pageEvents.refresh(store.items.filter((it) => !isHidden(it) && (moderation.showMayhem || it.flagKind !== "MAYHEM") && !moderation.isHidden(it.address)));
     // The group row appears once it has counts: the tiles' inset grows by its height, so the room is measured again.
-    if (wasShown !== header.groupRowShown()) {
-      sizedW = -1;
-      resize();
-    }
-  }
+    const counts = shownGroupCounts();
+    if (!header.groupRowShown()) changeInset(() => header.setGroupCounts(counts));
+    else header.setGroupCounts(counts);
+    //
+    header.setGroupEmpty(pickedGroup !== null && counts[pickedGroup] === 0);
+  } else header.setGroupEmpty(false);
 }, 700);
 if (import.meta.env.DEV) {
   Object.assign(window, {
     __cam: cam,
+    __quick: pageEvents,
+    __openDeepScan: openDeepScan,
     __store: store,
     __field: field,
     __streams: streams,
@@ -1511,7 +1655,12 @@ function frameBody(now: number): void {
   prof.mark("pages(discover/coin/arena/wallet)");
   // The glass plates behind the pages (shown in the map) fade in as a page starts to shrink, so nothing pops.
   pages.setPlate(mapness);
-  drawMapNames(mapMode && !journey && view.w < 560, sc);
+  //
+  const near = Math.min(1, Math.max(0, (home * 0.62 - sc) / Math.max(1e-6, home * 0.62 - macroScale() * 1.08)));
+  mapPreviews.update(cam, view, mapish ? near : 0, (id) => pages.roomPress(id));
+  if (mapish && near > 0) mapPreviews.refresh({ items: store.items, tracked: liveFeed.link().files, subject: focusToken, arena: arenaGroupsNow });
+  //
+  drawMapNames(mapMode && !journey && view.w < 560 && near <= 0, sc);
   pages.update(cam, view, mapish || (current !== "pinr" && !isOverlayPage(current)) || (isOverlayPage(current) && zoomedOut), dt);
   field.setGroup(mapish ? pages.pinrPress() : { scale: 1, ox: 0, oy: 0, cx: 0, cy: 0 });
   // Hovering or holding applies to the tiles in a page, or to the rooms in the map, never both at once.
@@ -1567,16 +1716,19 @@ function frameBody(now: number): void {
     const h = cameraFor(frames[current], view.h, topInset, homeScale());
     cam.setHome(h.x, h.y, homeScale());
     if (first) cam.jumpHome();
-    else if (current === "pinr" && !mapMode && !journey) cam.flyHome();
+    else if (current === "pinr" && !mapMode && !journey && Date.now() >= keepViewUntil) cam.flyHome(); // a list grown at its end, or refreshed, keeps the view
   }
   prof.mark("field.tick");
   applyBounds();
+  if (current === "pinr" && !mapMode && !journey && Number.isFinite(bnd.bottom)) growListAtEnd(header.filter());
   // While the map is showing, "which page am I on" follows the camera, so zooming in over a room locks onto that room.
   if (mapMode && !journey) current = nearestPage(frames, cam.x, cam.y, view.h, topInset, s);
   if (!journey) tabbar.setActive(current);
   tabbar.setCompass(current, atMacro());
-  mapZoom.setShown(mapMode && view.w < PHONE_WIDTH);
   header.setBack(trail.canBack || (mapMode && !journey));
+  //
+  const mapOn = mapMode && !journey ? "1" : "";
+  if (document.documentElement.dataset.map !== mapOn) document.documentElement.dataset.map = mapOn;
   prof.mark("camera bounds+tabs");
   const vt = field.visibleTiles();
   streams.still = reduceMotion.matches || !motionEnabled;
@@ -1594,7 +1746,7 @@ function frameBody(now: number): void {
 
   prof.mark("streams");
   hud.cpu += (performance.now() - t0 - hud.cpu) * 0.05;
-  hud.extra = `${prof.top(6)}\ntiles ${field.count} · ${userCols} per row · ${mapMode ? "map" : current}`;
+  hud.extra = `${prof.top(6)}\ntiles ${field.count} · ${userCols} per row · ${mapMode ? "map" : current} · list +${getListMore()} of ${liveFeed.listTotal(header.filter()) ?? "?"}`;
   hud.push(dtMs, now);
 }
 requestAnimationFrame(frame);
@@ -1636,10 +1788,12 @@ async function openCoinLink(address: string): Promise<void> {
       coinPage.scrollTo("chart");
       return;
     }
-    // not on the first page: ask the server for this one coin at once; a coin the server does not know says so
-    if (i === 0) {
+    // not on the first page: ask the server for this one coin at once, and again at about 2, 5 and 10 s (walk item 7, 9 Nov: a listed coin read
+    // "not showing" for a moment while the server was busy or restarting); only when every answer says so is the note shown
+    if (i === 0 || i === 8 || i === 20 || i === 40) {
       const why = await liveFeed.findWhy(address);
-      if (!why.found) return notListed(address, why.notice);
+      if (why.found) continue;
+      if (i === 40) return notListed(address, why.notice);
     }
     await new Promise((r) => setTimeout(r, 250));
   }

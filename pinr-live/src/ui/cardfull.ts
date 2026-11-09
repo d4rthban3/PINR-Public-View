@@ -3,6 +3,7 @@ import { formatPrice } from "../world/format";
 import { chainName } from "../world/chainname";
 import { statusLook, type Item } from "../world/model";
 import { tagChips } from "../world/tags";
+import { tickerText } from "../world/nameless";
 import { highlightShown, lookupTradeLink } from "./highlightline";
 
 /**
@@ -124,7 +125,7 @@ export function createCardFull(opts: CardFullOptions): CardFull {
 
   function fill(it: Item): void {
     tablet.replaceChildren();
-    tablet.setAttribute("aria-label", `${it.name} ${it.ticker}`);
+    tablet.setAttribute("aria-label", `${it.name} ${tickerText(it)}`);
     slot = el("div", "cfslot");
     const close = el("button", "cfclose", "Close");
     close.type = "button";
@@ -134,7 +135,7 @@ export function createCardFull(opts: CardFullOptions): CardFull {
     top.append(slot);
     // The card on the tablet is the tile as it is (its words may be cut to fit it): the full name, ticker and tags are written out here, whole.
     const ident = el("div", "cfident");
-    ident.append(el("h2", "cfname", it.name), el("div", "cftick", it.ticker));
+    ident.append(el("h2", "cfname", it.name), el("div", "cftick", tickerText(it)));
     const tags = el("div", "cftags");
     tags.append(...tagChips(it.tags ?? [], it.createdCount));
     if (tags.childElementCount) ident.append(tags);

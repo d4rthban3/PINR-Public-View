@@ -5543,6 +5543,11 @@ a.dsvampopen {
 .card .tick {
   font-size: max(var(--ftick), var(--tmin, 0px));
 }
+.card .tick.nl {
+  /* "name not read" is longer than a ticker: a little smaller and tighter so a phone's narrow tile does not cut it (inspector, 8 Nov) */
+  font-size: calc(max(var(--ftick), var(--tmin, 0px)) * 0.8);
+  letter-spacing: -0.03em;
+}
 .card .cov b {
   font-size: max(var(--fcov), var(--tmin, 0px));
   opacity: 1;
@@ -6671,83 +6676,6 @@ html.noscore #stage[data-lod="1"] .card .n {
   inset: -14px -10px;
 }
 
-.mapzoom {
-  position: fixed;
-  z-index: 8;
-  right: calc(var(--edge, 12px) + 4px);
-  bottom: calc(var(--clip-bottom, 80px) + 12px);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.mapzoom[hidden] {
-  display: none;
-}
-.mapzoomb {
-  all: unset;
-  box-sizing: border-box;
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  border-radius: 22px;
-  background: rgba(var(--glass-rgb), 0.8);
-  box-shadow:
-    inset 0 0 0 1px rgba(var(--fg-rgb), 0.12),
-    0 6px 16px -8px rgba(0, 0, 0, 0.55);
-  font: 500 24px/1 var(--font);
-  color: var(--text);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.mapzoomb:active {
-  transform: scale(0.94);
-}
-.mapzoomb:focus-visible {
-  outline: 2px solid var(--live);
-  outline-offset: 2px;
-}
-
-#pstate {
-  position: fixed;
-  z-index: 6;
-  left: 50%;
-  top: var(--ps-top, 96px);
-  height: var(--ps-h, 46px);
-  transform: translateX(-50%);
-  width: calc(100vw - 2 * var(--edge));
-  max-width: 1200px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  pointer-events: none;
-}
-#pstate[hidden] {
-  display: none;
-}
-#pstate .psline {
-  font-size: 13px;
-  line-height: 1.3;
-  color: var(--text);
-  text-shadow: 0 1px 8px rgba(var(--glass-rgb), 0.9);
-}
-#pstate .psfacts {
-  margin-top: 3px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 14px;
-  font: 600 11px var(--mono);
-  color: var(--mute);
-}
-#pstate .psfacts b {
-  color: var(--text);
-  font-weight: 700;
-}
-@media (max-width: 599.98px) {
-  #pstate .psline {
-    font-size: 12px;
-  }
-}
 
 /*
    Like the launchpad pills each is a 44 px box with the 32 px pill drawn inside it, so the tap area is full size and the row is the same height as the one above. */
@@ -6763,6 +6691,17 @@ html.noscore #stage[data-lod="1"] .card .n {
 }
 #grprow[hidden] {
   display: none;
+}
+@media (min-width: 800px) {
+  #grprow {
+    position: static;
+    transform: none;
+    max-width: none;
+    flex: none;
+    margin-left: 10px;
+    padding-left: 12px;
+    border-left: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
+  }
 }
 #grpbar {
   min-width: 0;
@@ -6804,19 +6743,33 @@ html.noscore #stage[data-lod="1"] .card .n {
   position: relative;
   z-index: 1;
 }
-.grppill .gd {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+.grppill[hidden] {
+  display: none;
 }
-.grppill[data-g="read"] .gd {
-  background: var(--live);
+/* Four pills at 320 px: a little less air inside each pill (14 to 10 px) and between them (6 to 4 px) so the fourth ends inside the row even with three-digit counts; 375 px and wider are unchanged. */
+@media (max-width: 340px) {
+  .grppill {
+    padding: 0 10px;
+  }
+  #grpbar {
+    gap: 4px;
+  }
 }
-.grppill[data-g="closer"] .gd {
-  background: var(--mandarin);
+.grppill .gi {
+  display: flex;
+  color: var(--text);
 }
-.grppill[data-g="unchecked"] .gd {
-  box-shadow: inset 0 0 0 1.5px var(--mute);
+.grppill[data-g="read"] .gi {
+  color: var(--live);
+}
+.grppill[data-g="closer"] .gi {
+  color: var(--mandarin);
+}
+.grppill[data-g="partly"] .gi {
+  color: var(--text);
+}
+.grppill[data-g="unchecked"] .gi {
+  color: var(--mute);
 }
 .grppill .gn {
   font: 700 11px var(--mono);
@@ -6831,4 +6784,878 @@ html.noscore #stage[data-lod="1"] .card .n {
 .grppill:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 2px;
+}
+
+/*
+   card's own look come back on zoom-in. Only the picture shows; the tile's glass and all its text are hidden. */
+#glassLayer[data-dot="1"] .glass {
+  visibility: hidden;
+}
+#stage[data-dot="1"] .card {
+  padding: 0;
+  overflow: visible;
+  contain: layout style;
+}
+#stage[data-dot="1"] .card > * {
+  display: none;
+}
+#stage[data-dot="1"] .card > .top {
+  display: block;
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+}
+#stage[data-dot="1"] .card .top > :not(.ident) {
+  display: none;
+}
+#stage[data-dot="1"] .card .top > .ident {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+#stage[data-dot="1"] .card .idtxt,
+#stage[data-dot="1"] .card .avwrap .badge,
+#stage[data-dot="1"] .card .avwrap > :not(.avatar) {
+  display: none;
+}
+#stage[data-dot="1"] .card .avwrap {
+  height: 74%;
+  width: auto;
+  aspect-ratio: 1;
+  display: block;
+  position: relative;
+  overflow: visible;
+}
+/*
+   (the Art Pack's Quiet Lime sonar, held still), and its edge is lit in the coin's Token health colour: the lime end of that scale is PINR's own lime. */
+#stage[data-dot="1"] .card .avwrap::before {
+  content: "";
+  position: absolute;
+  inset: -36%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(205, 182, 254, 0.34) 0%, rgba(205, 182, 254, 0.13) 46%, rgba(205, 182, 254, 0) 70%);
+  pointer-events: none;
+}
+#stage[data-dot="1"] .card .avwrap::after {
+  content: "";
+  position: absolute;
+  inset: -16%;
+  border-radius: 50%;
+  border: 0.035em solid rgba(205, 182, 254, 0.38);
+  pointer-events: none;
+}
+/*
+   transform and opacity, so it costs the page no layout; the dots start at five different points of the beat so the sky does not pulse as one. A coin not read yet stays still. */
+@keyframes dotpulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+}
+#stage[data-dot="1"] .card:not(.noread) .avwrap::after {
+  animation: dotpulse 5s ease-out infinite;
+}
+#stage[data-dot="1"] .card:nth-child(5n + 2) .avwrap::after {
+  animation-delay: -1s;
+}
+#stage[data-dot="1"] .card:nth-child(5n + 3) .avwrap::after {
+  animation-delay: -2s;
+}
+#stage[data-dot="1"] .card:nth-child(5n + 4) .avwrap::after {
+  animation-delay: -3s;
+}
+#stage[data-dot="1"] .card:nth-child(5n) .avwrap::after {
+  animation-delay: -4s;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* as specific as the rules above, or the pulse wins (inspector, 8 Nov) */
+  #stage[data-dot="1"] .card:not(.noread) .avwrap::after,
+  #stage[data-dot="1"] .card:nth-child(5n + 2) .avwrap::after,
+  #stage[data-dot="1"] .card:nth-child(5n + 3) .avwrap::after,
+  #stage[data-dot="1"] .card:nth-child(5n + 4) .avwrap::after,
+  #stage[data-dot="1"] .card:nth-child(5n) .avwrap::after {
+    animation: none;
+  }
+}
+#stage[data-dot="1"] .card .avatar {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 0.07em var(--dot, var(--mute)),
+    0 0 0.45em 0.05em color-mix(in srgb, var(--dot, var(--mute)) 65%, transparent);
+  font-size: var(--fimg, 27px);
+}
+/* Not read yet: the quiet end of the Art Pack's lime: no halo, no ring of colour, only a faint lavender hairline, so the sky stays calm and a score is never implied. */
+#stage[data-dot="1"] .card.noread .avwrap::before {
+  display: none;
+}
+#stage[data-dot="1"] .card.noread .avwrap::after {
+  border-color: rgba(205, 182, 254, 0.22);
+}
+#stage[data-dot="1"] .card.noread .avatar {
+  box-shadow: 0 0 0 0.04em rgba(205, 182, 254, 0.4);
+  opacity: 0.55;
+}
+:root[data-theme="light"] #stage[data-dot="1"] .card .avwrap::before {
+  background: radial-gradient(circle, rgba(108, 77, 251, 0.26) 0%, rgba(108, 77, 251, 0.1) 46%, rgba(108, 77, 251, 0) 70%);
+}
+:root[data-theme="light"] #stage[data-dot="1"] .card .avwrap::after {
+  border-color: rgba(108, 77, 251, 0.34);
+}
+:root[data-theme="light"] #stage[data-dot="1"] .card.noread .avwrap::after {
+  border-color: rgba(108, 77, 251, 0.2);
+}
+:root[data-theme="light"] #stage[data-dot="1"] .card.noread .avatar {
+  box-shadow: 0 0 0 0.04em rgba(108, 77, 251, 0.4);
+}
+
+/*
+   stands, so it reads as sitting behind every panel; the panels' own glass look stays on top of a solid fill. Only in the map: zoomed in, the glass is as it was. */
+:root.inmap .page {
+  background:
+    linear-gradient(135deg, rgba(var(--fg-rgb), 0.05) 0%, rgba(var(--fg-rgb), 0.008) 30%, rgba(var(--fg-rgb), 0.008) 70%, rgba(var(--fg-rgb), 0.045) 100%),
+    rgb(var(--panel-rgb));
+}
+
+.cptvbtn {
+  background: none;
+  cursor: pointer;
+}
+.cptvbox {
+  margin: 8px 18px 4px;
+  height: 420px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--fg-rgb), 0.2);
+}
+.cptvbox[hidden] {
+  display: none;
+}
+.cptvbox .tradingview-widget-container,
+.cptvbox .tradingview-widget-container__widget {
+  height: 100%;
+  width: 100%;
+}
+
+/*
+ *
+ * slab (the rooms' own bevel and sheen, a deeper fill so it reads from far away), the blade mark and the page's name, the Art Pack's scope
+ * geometry behind, and the page's live content. Sized by the room itself (container units), so a phone and a desktop read the same piece.
+ */
+.mapprev {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform, opacity;
+  pointer-events: none;
+  /* the live pages are z-index 5; this layer comes after them in the page, so at the same level it sits on top, below everything at 6 and up */
+  z-index: 5;
+  --lav: #9b6bff;
+  --lav-deep: #6c4dfb;
+  --lav-soft: #cdb6fe;
+}
+:root[data-theme="light"] .mapprev {
+  --lav: #6c4dfb;
+  --lav-deep: #5536e0;
+  --lav-soft: #8f74f5;
+}
+.mapprev .mp {
+  position: absolute;
+  container-type: size;
+  border-radius: 30px;
+  overflow: hidden;
+  transform-origin: 50% 50%;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(155, 107, 255, 0.2), transparent 55%),
+    radial-gradient(90% 80% at 100% 100%, rgba(var(--live-rgb), 0.1), transparent 60%),
+    linear-gradient(rgb(var(--glass-rgb)), rgb(var(--glass-rgb)));
+  box-shadow:
+    inset 1.5px 1.5px 0 rgba(var(--fg-rgb), 0.85),
+    inset -1.5px -1.5px 0 rgba(var(--fg-rgb), 0.34),
+    inset 0 0 0 1px rgba(var(--fg-rgb), 0.16),
+    inset 3px 3px 10px -4px rgba(var(--fg-rgb), 0.22),
+    0 22px 44px -28px rgba(0, 0, 0, 0.45);
+}
+.mapprev .mp::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(118deg, rgba(var(--fg-rgb), 0.16) 0%, rgba(var(--fg-rgb), 0.04) 18%, transparent 36%);
+  pointer-events: none;
+}
+.mapprev .mp-scope {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+}
+.mapprev .mp-scope .rad {
+  stroke: var(--live);
+  stroke-width: 0.15;
+  opacity: 0.35;
+}
+.mapprev .mp-scope .ring {
+  stroke: var(--lav);
+  stroke-width: 0.25;
+  opacity: 0.35;
+}
+.mapprev .mp-body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4cqmin;
+  padding: 7cqmin 8cqmin;
+  color: var(--text);
+}
+.mapprev .mp-head {
+  display: flex;
+  align-items: center;
+  gap: 3cqmin;
+}
+.mapprev .mp-blade {
+  height: 12cqmin;
+  width: auto;
+  flex: none;
+}
+.mapprev .mp-blade .b1 {
+  fill: var(--text);
+}
+.mapprev .mp-blade .b2 {
+  fill: var(--lav-soft);
+}
+.mapprev .mp-blade .tip {
+  fill: var(--live);
+}
+.mapprev .mp-title {
+  font: 700 11cqmin/1 var(--font);
+  letter-spacing: -0.03em;
+}
+.mapprev .mp-dot {
+  width: 3cqmin;
+  height: 3cqmin;
+  border-radius: 50%;
+  margin-left: auto;
+  background: var(--live);
+  box-shadow: 0 0 0 1.2cqmin rgba(var(--live-rgb), 0.18), 0 0 4cqmin rgba(var(--live-rgb), 0.6);
+}
+.mapprev .mp-coin {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 15cqmin;
+  height: 15cqmin;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(155, 107, 255, 0.22);
+  box-shadow: 0 0 0 0.6cqmin rgba(var(--fg-rgb), 0.18);
+  font: 700 6cqmin/1 var(--font);
+  color: var(--lav-soft);
+}
+.mapprev .mp-coin img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mapprev .mp-coin.big {
+  width: 24cqmin;
+  height: 24cqmin;
+  font-size: 10cqmin;
+  box-shadow: 0 0 0 0.8cqmin var(--live), 0 0 6cqmin rgba(var(--live-rgb), 0.35);
+}
+.mapprev .mp-coin.face {
+  width: 12cqmin;
+  height: 12cqmin;
+  margin-left: -3.5cqmin;
+  box-shadow: 0 0 0 0.7cqmin rgb(var(--glass-rgb));
+}
+.mapprev .mp-coin.face:first-child {
+  margin-left: 0;
+  box-shadow: 0 0 0 0.7cqmin var(--live);
+}
+/* Discover: the coins live now, as a wall of pictures. */
+.mapprev .mp-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-content: center;
+  justify-items: center;
+  gap: 3cqmin 2cqmin;
+}
+/* A tall, narrow room (a phone's map): three columns, two rows. */
+@container (aspect-ratio < 0.9) {
+  .mapprev .mp-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .mapprev .mp-cell:nth-child(n + 7) {
+    display: none;
+  }
+  .mapprev .mp-battle .mp-n {
+    display: none;
+  }
+}
+.mapprev .mp-cell {
+  display: grid;
+  justify-items: center;
+  gap: 1.5cqmin;
+  min-width: 0;
+}
+.mapprev .mp-cell b {
+  max-width: 20cqmin;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 3.6cqmin/1 var(--mono);
+  color: var(--mute);
+}
+.mapprev .mp-foot {
+  font: 500 4.5cqmin/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.mapprev .mp-foot b {
+  font: 700 7cqmin/1 var(--font);
+  letter-spacing: -0.02em;
+  color: var(--live);
+  margin-right: 1.5cqmin;
+}
+/* Deep Scan: the picked coin, its value and its line. */
+.mapprev .mp-subject {
+  display: flex;
+  align-items: center;
+  gap: 4cqmin;
+  margin-top: 2cqmin;
+}
+.mapprev .mp-who {
+  display: grid;
+  gap: 1.5cqmin;
+  min-width: 0;
+}
+.mapprev .mp-who b {
+  font: 700 8.5cqmin/1.05 var(--font);
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapprev .mp-who span {
+  font: 600 4.5cqmin/1 var(--mono);
+  color: var(--lav-soft);
+}
+.mapprev .mp-value {
+  font: 700 10cqmin/1 var(--font);
+  letter-spacing: -0.03em;
+  color: var(--live);
+}
+.mapprev .mp-spark {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  fill: none;
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+}
+.mapprev .mp-spark polyline {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.mapprev .mp-spark.up polyline {
+  stroke: var(--live);
+}
+.mapprev .mp-spark.down polyline {
+  stroke: var(--mandarin);
+}
+.mapprev .mp-wait {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3cqmin;
+  font: 500 4.5cqmin/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.mapprev .mp-sonar {
+  width: 34cqmin;
+  height: 34cqmin;
+  fill: none;
+  stroke: var(--live);
+  stroke-width: 0.8;
+}
+.mapprev .mp-sonar circle:nth-child(2) {
+  opacity: 0.6;
+}
+.mapprev .mp-sonar circle:nth-child(3) {
+  opacity: 0.35;
+}
+.mapprev .mp-sonar circle:nth-child(4) {
+  opacity: 0.18;
+}
+/* Arena: the leading battles, each its versions' faces. */
+.mapprev .mp-battles {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  align-content: center;
+  gap: 3cqmin;
+}
+.mapprev .mp-battle {
+  display: flex;
+  align-items: center;
+  gap: 3cqmin;
+  padding: 2cqmin 3cqmin;
+  border-radius: 4cqmin;
+  background: rgba(var(--fg-rgb), 0.05);
+  box-shadow: inset 0 0 0 0.3cqmin rgba(var(--fg-rgb), 0.12);
+}
+.mapprev .mp-faces {
+  display: flex;
+}
+.mapprev .mp-battle b {
+  font: 700 6cqmin/1 var(--font);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapprev .mp-n {
+  margin-left: auto;
+  flex: none;
+  padding: 1.2cqmin 2.4cqmin;
+  border-radius: 9cqmin;
+  background: rgba(155, 107, 255, 0.22);
+  font: 600 3.6cqmin/1 var(--mono);
+  color: var(--lav-soft);
+}
+/* Wallet: the view-only profile's mark. */
+.mapprev .mp-wprof {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4cqmin;
+  font: 500 4.5cqmin/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.mapprev .mp-ring {
+  display: grid;
+  place-items: center;
+  width: 30cqmin;
+  height: 30cqmin;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(155, 107, 255, 0.28), rgba(155, 107, 255, 0.06) 70%);
+  box-shadow: 0 0 0 0.6cqmin var(--lav), 0 0 0 3cqmin rgba(155, 107, 255, 0.1);
+}
+.mapprev .mp-ring svg {
+  width: 15cqmin;
+  height: 15cqmin;
+  fill: none;
+  stroke: var(--live);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* The ad areas: four clean slots in our own gradients, each with its name big enough to read from the map. */
+.mapprev .mp-ad {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(155, 107, 255, 0.16), transparent 55%),
+    linear-gradient(rgb(var(--glass-rgb)), rgb(var(--glass-rgb)));
+}
+.mapprev .mp-ad .mp-body {
+  padding: 5cqmin;
+  gap: 3cqmin;
+}
+.mapprev .mp-adhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 600 4.5cqmin/1 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.mapprev .mp-adhead em {
+  font-style: normal;
+  padding: 1.4cqmin 3cqmin;
+  border-radius: 9cqmin;
+  background: var(--live);
+  color: var(--on-live);
+  letter-spacing: 0.08em;
+}
+.mapprev .mp-slots {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1.15fr 1fr 1.15fr;
+  gap: 2.5cqmin;
+}
+.mapprev .mp-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 4cqmin;
+  background: var(--g);
+  box-shadow: inset 0 0 0 0.4cqmin rgba(255, 255, 255, 0.35);
+}
+.mapprev .mp-slot.wide {
+  grid-column: 1 / -1;
+}
+.mapprev .mp-slot b {
+  font: 800 9cqmin/1 var(--font);
+  letter-spacing: -0.03em;
+  color: #0a0c0e;
+}
+.mapprev .mp-slot i {
+  position: absolute;
+  top: 2cqmin;
+  right: 2.5cqmin;
+  font: 700 2.8cqmin/1 var(--mono);
+  font-style: normal;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(10, 12, 14, 0.65);
+}
+
+#pevents {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+#pevents[hidden] {
+  display: none;
+}
+#pevents .evback {
+  position: absolute;
+  inset: 0;
+}
+#pevents .evpanel {
+  position: absolute;
+  left: 50%;
+  top: var(--pe-top, 96px);
+  transform: translateX(-50%);
+  width: calc(100vw - 2 * var(--edge));
+  max-width: 1160px;
+  max-height: calc(100vh - var(--pe-top, 96px) - 90px);
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: 28px;
+  background: rgba(var(--panel-rgb), 0.82);
+  border: 1px solid rgba(var(--fg-rgb), 0.16);
+  box-shadow: inset 0 1px 0 rgba(var(--fg-rgb), 0.3), 0 24px 60px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(22px) saturate(1.3);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  animation: evpop 0.18s ease-out;
+}
+@keyframes evpop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #pevents .evpanel {
+    animation: none;
+  }
+}
+#pevents .evclose {
+  position: absolute;
+  right: 8px;
+  top: 2px;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  font: 300 28px/1 var(--font);
+  cursor: pointer;
+}
+#pevents .evgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding-top: 30px;
+}
+#pevents .evc {
+  position: relative;
+  min-height: 150px;
+  overflow: hidden;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(var(--fg-rgb), 0.13), rgba(var(--fg-rgb), 0.05) 42%, rgba(var(--fg-rgb), 0.028));
+  border: 1px solid rgba(var(--fg-rgb), 0.16);
+  box-shadow: inset 0 1px 0 rgba(var(--fg-rgb), 0.4), 0 14px 30px rgba(0, 0, 0, 0.26);
+}
+:root[data-theme="light"] #pevents .evc {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.6));
+  box-shadow: inset 0 1px 0 #fff, 0 12px 26px rgba(80, 60, 130, 0.18);
+}
+#pevents .evtex {
+  position: absolute;
+  inset: -30%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.7;
+  background: radial-gradient(42% 36% at 24% 18%, rgba(var(--fg-rgb), 0.16), transparent 62%), radial-gradient(46% 40% at 74% 78%, rgba(var(--live-rgb), 0.14), transparent 68%);
+  animation: evdrift var(--tex, 18s) ease-in-out infinite alternate;
+}
+@keyframes evdrift {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1.05);
+  }
+  to {
+    transform: translate3d(3%, 2%, 0) scale(1.12);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #pevents .evtex {
+    animation: none;
+  }
+}
+#pevents .evin {
+  position: relative;
+  padding: 12px 14px;
+}
+#pevents .evk {
+  font: 600 10px var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+#pevents .evt {
+  margin: 4px 0 6px;
+  font: 700 14px/1.2 var(--font);
+  color: var(--text);
+}
+#pevents .evr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--text);
+}
+#pevents .evi {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(var(--fg-rgb), 0.1);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 11px;
+}
+#pevents .evn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#pevents .evw {
+  margin-left: auto;
+  flex: none;
+  font: 600 11px var(--mono);
+  color: var(--mute);
+}
+#pevents .evbig {
+  margin-top: 4px;
+  font: 800 28px/1 var(--font);
+  color: var(--text);
+}
+#pevents .evp {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--mute);
+}
+
+/*
+   still finds its slot), and the PINR mark in the header is smaller while the map shows. */
+:root[data-map="1"] .mapprev .mp-ad {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px rgba(var(--fg-rgb), 0.28);
+}
+:root[data-map="1"] .mapprev .mp-ad::after {
+  display: none;
+}
+:root[data-map="1"] .mapprev .mp-ad .mp-body > * {
+  visibility: hidden;
+}
+:root[data-map="1"] .mapprev .mp-ad::before {
+  content: "Ad space";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 6cqmin var(--font);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.6;
+  pointer-events: none;
+}
+:root[data-map="1"] #bar .guidebtn {
+  transform: scale(0.62);
+}
+:root[data-map="1"] .page-adarea .pbody > * {
+  visibility: hidden;
+}
+
+.dstags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.dstags:empty {
+  display: none;
+}
+#pevents .evi {
+  position: relative;
+}
+#pevents .evi .evimg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+/*
+   (public/spot.js sets --mx and --my and adds spot-on to html; the glow is Muster's own docs/style.css rule, copied as it is). The PINR artwork stays in the code behind data-bg="glow"
+   on <html> in index.html: take the attribute off to bring it back. */
+:root[data-bg="glow"] {
+  --spot: rgba(90, 58, 232, 0.7);
+}
+:root[data-bg="glow"][data-theme="light"] {
+  --spot: rgba(90, 58, 232, 0.38);
+}
+:root[data-bg="glow"] {
+  background: #191c24;
+}
+:root[data-bg="glow"][data-theme="light"] {
+  background: #f4eeff;
+}
+/* the page itself is clear, so the glow (behind it, above the colour) shows */
+:root[data-bg="glow"] body {
+  background: transparent;
+}
+:root[data-bg="glow"] #bg {
+  display: none;
+}
+:root[data-bg="glow"].spot-on body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle 460px at var(--mx, 50%) var(--my, 260px), var(--spot), transparent 70%);
+}
+
+/*
+   and one lime glow, wide and soft, in PINR's own purple and lime, standing still (nothing follows the pointer). The page is clear over it. The pointer glow (data-bg="glow") and
+   the PINR artwork (no data-bg) stay in the code, unused. */
+:root[data-bg="static"] {
+  background-color: #191c24;
+  background-image:
+    radial-gradient(ellipse 70% 55% at 15% 10%, rgba(139, 92, 246, 0.34), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 88% 92%, rgba(214, 255, 60, 0.2), transparent 70%);
+  background-attachment: fixed;
+}
+:root[data-bg="static"][data-theme="light"] {
+  background-color: #f4eeff;
+  background-image:
+    radial-gradient(ellipse 70% 55% at 15% 10%, rgba(139, 92, 246, 0.24), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 88% 92%, rgba(214, 255, 60, 0.42), transparent 70%);
+}
+:root[data-bg="static"] body {
+  background: transparent;
+}
+:root[data-bg="static"] #bg {
+  display: none;
+}
+
+/*
+   set by ui/scrolledge.ts). Phone widths up to 420 px give the group pills a little less air so all four stay whole with the whole-list counts (up to five digits). */
+#lpbar[data-edge],
+#grpbar[data-edge] {
+  --fade: 26px;
+}
+#lpbar[data-edge="r"],
+#grpbar[data-edge="r"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent);
+}
+#lpbar[data-edge="l"],
+#grpbar[data-edge="l"] {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent);
+}
+#lpbar[data-edge="lr"],
+#grpbar[data-edge="lr"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+}
+@media (max-width: 420px) {
+  .grppill {
+    padding: 0 9px;
+    gap: 6px;
+  }
+  #grpbar {
+    gap: 3px;
+  }
+}
+/* No coin in the picked group: said in plain words under the pill rows, where the tiles would start. */
+.grpempty {
+  position: fixed;
+  z-index: 6;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(12px + env(safe-area-inset-top) + 50px + 4px + 44px + 44px + 28px);
+  max-width: calc(100vw - 2 * var(--edge));
+  text-align: center;
+  font: 500 14px/1.4 var(--font);
+  color: var(--mute);
+  pointer-events: none;
+}
+.grpempty[hidden] {
+  display: none;
+}
+@media (min-width: 800px) {
+  .grpempty {
+    top: calc(12px + env(safe-area-inset-top) + 50px + 4px + 44px + 28px);
+  }
 }

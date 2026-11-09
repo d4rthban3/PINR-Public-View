@@ -240,7 +240,7 @@ struct Chip: View {
         case .fair: .fair
         case .weak: .weak
         case .clear: .clear
-        case .noData, .notRead, .notGraded: .none
+        case .noData, .notRead, .notGraded, .readNotGraded: .none
         }
     }
 }

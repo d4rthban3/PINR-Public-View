@@ -17,6 +17,8 @@ export interface RingOptions {
   ticker: string;
   groups: OrbitGroup[];
   loading: boolean;
+  /** What an empty group's label says instead of "not checked yet" (a coin the feed does not track). */
+  emptyWord?: string;
   /** A group (fact null) or one fact was chosen: the page shows its rows. */
   onOpen(g: OrbitGroup, fact: number | null): void;
   /** The group view opened (the group) or closed (null). */
@@ -122,7 +124,7 @@ export function createRing(opts: RingOptions): Ring {
 
   function groupNode(g: OrbitGroup, loading: boolean): SVGGElement {
     // while the file is still loading a group says so: "not checked yet" would be a statement about PINR's reading, and nothing is known yet
-    const said = loading ? "loading" : g.facts.length ? `${g.facts.length} facts` : "not checked yet";
+    const said = loading ? "loading" : g.facts.length ? `${g.facts.length} facts` : opts.emptyWord ?? "not checked yet";
     const node = se("g", { tabindex: 0, role: "button", "aria-label": `${g.label}: ${said}` }, `orbnode${g.facts.length || loading ? "" : " empty"}`);
     node.setAttribute("data-group", g.id);
     node.append(se("circle", { cx: 0, cy: 0, r: 31 }, "orbdot"));

@@ -9,9 +9,13 @@ import { gateNotChecked, gateView, grokbotView, orbitGroups, pinraiView, type Or
  * under the picture each group's facts, each with ● (read on chain) or ○ (reported), its age and its link. The paper trail comes from the feed
  * server's `/api/evidence` (server/evidence.ts). Words are the doctor's ("not checked yet"), never a verdict.
  */
+/** The feed's answer that it does not track this coin at all (its 404 "unknown token"): not a failed call, so the reader stops and says so. */
+export const NOT_TRACKED = "not tracked";
+/** The one sentence the web and its lists show for a coin the feed does not track (the same words as DeepScan's sections, walk item 4). */
+export const NOT_TRACKED_WORDS = "PINR has not read this coin yet.";
 export interface OrbitOptions {
-  /** The coin's evidence; `null` when there is none yet or it could not be read. */
-  fetchEvidence(address: string): Promise<Evidence | null>;
+  /** The coin's evidence; `null` when there is none yet or it could not be read; NOT_TRACKED when the feed does not track the coin. */
+  fetchEvidence(address: string): Promise<Evidence | null | typeof NOT_TRACKED>;
 }
 export interface Orbit {
   el: HTMLElement;
@@ -46,12 +50,13 @@ export function createOrbit(opts: OrbitOptions): Orbit {
   let epoch = 0;
 
   let ringHandle: Ring | null = null;
-  function ring(groups: OrbitGroup[], loading: boolean): HTMLElement {
+  function ring(groups: OrbitGroup[], loading: boolean, emptyWord?: string): HTMLElement {
     ringHandle?.destroy();
     ringHandle = createRing({
       ticker: item?.raw?.ticker ?? "",
       groups,
       loading,
+      emptyWord,
       onOpen: (g, fact) => openGroup(g, fact),
       onView: (g) => {
         if (!g) opened.replaceChildren();
@@ -222,7 +227,19 @@ export function createOrbit(opts: OrbitOptions): Orbit {
     if (v.readText) grok.append(el("p", "orbgateread", v.readText));
   }
 
-  function render(ev: Evidence | null, loading: boolean): void {
+  function render(answer: Evidence | null | typeof NOT_TRACKED, loading: boolean): void {
+    if (answer === NOT_TRACKED) {
+      // one honest state for the whole section: every group empty with the same words, and one line under the picture instead of six
+      for (const b of [gate, ai, grok]) {
+        b.hidden = true;
+        b.replaceChildren();
+      }
+      opened.replaceChildren();
+      figure.replaceChildren(ring(orbitGroups(null, Date.now()), false, NOT_TRACKED_WORDS));
+      lists.replaceChildren(el("p", "orbnone", NOT_TRACKED_WORDS));
+      return;
+    }
+    const ev = answer;
     drawGate(loading ? null : ev, !loading);
     drawPinrai(loading ? null : ev);
     drawGrokbot(loading ? null : ev);

@@ -6,6 +6,7 @@ import { money } from "../world/discoverlist";
 import { formatPriceCompact } from "../world/format";
 import type { Item } from "../world/model";
 import { scoreColor } from "../world/scorecolor";
+import { tagChips } from "../world/tags";
 import { avatarColors, cleanAddress, parseProfile, shortAddr, VIEW_ONLY_POINTS, VIEW_ONLY_TITLE, WALLET_KEY, type WalletProfile } from "../world/wallet";
 import { attachPageGestures, createPlacer, type GestureOptions, type Placement } from "./pageoverlay";
 
@@ -217,6 +218,12 @@ export function createWalletPage(opts: WalletOptions): WalletPage {
       row.type = "button";
       const n = el("span", "wlholdn");
       n.append(el("b", undefined, h.name ?? shortAddr(h.address)), el("i", undefined, `${h.ticker ?? ""} · ${compact.format(h.balance)}`));
+      //
+      if (found?.tags?.length) {
+        const tg = el("span", "dstags");
+        tg.append(...tagChips(found.tags, found.createdCount));
+        n.append(tg);
+      }
       const right = el("span", "wlholdv");
       right.append(el("b", undefined, h.usd !== null ? usd(h.usd) : "no price"));
       //

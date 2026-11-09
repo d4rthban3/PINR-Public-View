@@ -1,3 +1,4 @@
+import { scrollEdge } from "./scrolledge";
 import type { Launchpad } from "../world/lists";
 
 /**
@@ -34,10 +35,12 @@ export function createLpPills(onPick: (lp: Launchpad) => void): LpPills {
   scroller.setAttribute("role", "radiogroup");
   scroller.setAttribute("aria-label", "Launchpad");
   el.append(scroller);
+  const edge = scrollEdge(scroller);
   return {
     el,
     show(on) {
       el.hidden = !on;
+      if (on) edge.update();
     },
     setTail(b) {
       b.classList.add("lptail");
@@ -76,6 +79,7 @@ export function createLpPills(onPick: (lp: Launchpad) => void): LpPills {
         const title = on && list ? `${list.title}${list.pinr ? ` (PINR's list, ordered ${list.order})` : ` (${list.order})`}` : lp.name;
         if (b.title !== title) b.title = title;
       });
+      edge.update();
     },
   };
 }

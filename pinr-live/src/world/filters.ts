@@ -87,6 +87,15 @@ try {
   /* no storage: the base size is used */
 }
 export const getRoster = (): number => roster;
+/**
+ *
+ * view reaches the list's end; back to none when the list changes.
+ */
+let listMore = 0;
+export const getListMore = (): number => listMore;
+export function setListMore(n: number): void {
+  listMore = Math.max(0, Math.floor(n));
+}
 export function setRoster(n: number): void {
   roster = clampRoster(n);
   try {
@@ -217,7 +226,7 @@ export function selectAndRank(filter: Filter, all: readonly Item[], limit: numbe
   const items = all.filter((it) => !isHidden(it, hides, scope));
   const byId = (a: Item, b: Item): number => a.id - b.id;
   //
-  if (isListFilter(filter)) return byRank(rankList(filter, items, limit, nowMs).map((it) => it.id));
+  if (isListFilter(filter)) return byRank(rankList(filter, items, limit === roster ? limit + listMore : limit, nowMs).map((it) => it.id));
   if (filter === "all") {
     // Everything by long-term weight (heaviest first by default), up to the roster size.
     return sortBy(items, (it) => it.base, dir, "desc", byId).slice(0, limit).map((it) => ({ id: it.id, imp: quantImp(it.base) }));

@@ -6,7 +6,7 @@ import { FILTERS, getHides, getRoster, getShowCopies, getSort, setShowCopies, se
 /** The sizes offered for the PINR page roster: the base (90), a few steps and the most (200). */
 const ROSTER_CHOICES = [60, ROSTER_DEFAULT, 120, 160, ROSTER_MAX];
 import { onLook, toggleLook } from "./theme";
-import { createGroupPills, type GroupCounts, type GroupId } from "./grouppills";
+import { createGroupPills, GROUPS_IN_ROW_FROM, type GroupCounts, type GroupId, type PillId } from "./grouppills";
 import type { PageId } from "../world/sitemap";
 import { moderation } from "../world/moderation";
 import { HIDDEN_COINS_MENU_LINE } from "./settings";
@@ -73,6 +73,7 @@ export interface PanelRow {
 export interface HeaderOptions {
   onFilter(f: Filter): void;
   onGroup?(g: GroupId | null): void;
+  onQuickView?(): void;
   /** A tile count chosen in the funnel panel. */
   onCols(n: number): void;
   /** A roster size chosen in the funnel panel (how many tiles the PINR page shows). */
@@ -112,6 +113,7 @@ export interface Header {
   setGroup(g: GroupId | null): void;
   /** True while the group row shows, so the page adds GROUP_ROW to its tile inset. */
   groupRowShown(): boolean;
+  setGroupEmpty(on: boolean): void;
   /**
    * What the funnel can do on this page: filters work on PINR and Discover, tiles per row on PINR only. The part that does not
    * apply fades and stops responding; with neither, the whole funnel fades. Pipeline, Diagnostics and the menu always work.
@@ -215,7 +217,16 @@ export function createHeader(opts: HeaderOptions): Header {
   //
   const lpPills = createLpPills(pickLp);
   lpPills.setTail(makeFilterBtn("fbtn"));
-  const groupPills = createGroupPills((g) => opts.onGroup?.(g));
+  //
+  const ICON_QUICK =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>';
+  const quickBtn = btn("fbtn quickbtn", ICON_QUICK, "Quick view of the four event cards", false);
+  quickBtn.type = "button";
+  quickBtn.title = "Quick view";
+  quickBtn.classList.add("lptail");
+  quickBtn.addEventListener("click", () => opts.onQuickView?.());
+  lpPills.el.append(quickBtn);
+  const groupPills = createGroupPills((g) => opts.onGroup?.(g as GroupId | null));
   function renderRows(): void {
     const sel = parseList(current);
     if (sel) pickedLp = sel.lp.id;
@@ -476,6 +487,18 @@ export function createHeader(opts: HeaderOptions): Header {
   bar.append(left, guide, actions);
   // The panels live beside the bar, not inside it: a blur cannot be nested inside another blur.
   document.body.append(bar, lpPills.el, groupPills.el, popFilter, popMenu, pipe.pop, diag.pop, popGuide);
+  //
+  const wideRow = matchMedia(`(min-width: ${GROUPS_IN_ROW_FROM}px)`);
+  const placeGroups = (): void => {
+    const home = wideRow.matches ? lpPills.el : document.body;
+    if (groupPills.el.parentElement !== home) home.append(groupPills.el);
+  };
+  placeGroups();
+  const groupEmpty = el("div", "grpempty", "No coin in this list is in that group.");
+  groupEmpty.hidden = true;
+  groupEmpty.setAttribute("role", "status");
+  document.body.append(groupEmpty);
+  wideRow.addEventListener("change", placeGroups);
 
   let current: Filter = DEFAULT_LIST;
   //
@@ -628,8 +651,11 @@ export function createHeader(opts: HeaderOptions): Header {
     filter: () => current,
     refreshLists: () => renderRows(),
     setGroupCounts: (c) => groupPills.setCounts(c),
-    setGroup: (g) => groupPills.set(g),
+    setGroup: (g: PillId | null) => groupPills.set(g),
     groupRowShown: () => groupPills.visible(),
+    setGroupEmpty: (on) => {
+      if (groupEmpty.hidden === on) groupEmpty.hidden = !on;
+    },
     setActive,
     setCols,
     setPage,

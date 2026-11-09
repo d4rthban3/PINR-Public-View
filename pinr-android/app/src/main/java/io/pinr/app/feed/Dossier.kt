@@ -38,7 +38,7 @@ data class Dossier(
     data class MoreLinks(val lead: String, val links: List<Link>)
     data class Receipt(val source: String, val readAtMs: Long, val link: String)
 
-    enum class Band(val word: String) { Strong("Strong"), Fair("Fair"), Weak("Weak"), Clear("Clear"), NotGraded("Not graded"), NoData("No data"), NotRead("Not read") }
+    enum class Band(val word: String) { Strong("Strong"), Fair("Fair"), Weak("Weak"), Clear("Clear"), NotGraded("Not graded"), ReadNotGraded("Read, not graded"), NoData("No data"), NotRead("Not read") }
     data class Check(val name: String, val band: Band, val reason: String?)
 
     data class Channel(val id: String, val label: String, val status: Status, val url: String?, val postBy: String?) {

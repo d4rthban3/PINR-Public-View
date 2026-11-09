@@ -195,7 +195,7 @@ fun bandTone(b: Dossier.Band): Tone = when (b) {
     Dossier.Band.Fair -> Tone.Fair
     Dossier.Band.Weak -> Tone.Weak
     Dossier.Band.Clear -> Tone.Clear
-    Dossier.Band.NoData, Dossier.Band.NotRead, Dossier.Band.NotGraded -> Tone.None
+    Dossier.Band.NoData, Dossier.Band.NotRead, Dossier.Band.NotGraded, Dossier.Band.ReadNotGraded -> Tone.None
 }
 
 /** One check's word; "Not read" carries its reason in the same chip, as on the site. */

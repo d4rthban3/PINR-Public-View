@@ -12,7 +12,11 @@ export interface Rect {
 }
 
 /** The grid never holds more rows than this: the most tiles (200) at the fewest columns the grid offers (4) is 50 rows. */
-export const MAX_ROWS = 50;
+/**
+ *
+ * scrolling at 400 tiles on a desktop and 150 on a phone (the inspector's stalled view).
+ */
+export const MAX_ROWS = 2000;
 /** Rows that fit on one screen at home. */
 export const VISIBLE_ROWS = 5;
 

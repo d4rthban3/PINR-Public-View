@@ -29,6 +29,8 @@ export interface FeedSnapshot {
   tokens: WireToken[];
   cut?: number;
   market?: { source: string; calls: number; errors: number; covered: number; none: number; pausedForS: number } | null;
+  /** Walk item 5: the served rows that draw a price line, by source (first page and rest list). */
+  lines?: { rows: number; drawn: number; bySource: Record<string, number> } | null;
   problems: { file: string; problems: { severity: string; field: string; message: string }[] }[];
 }
 
@@ -40,6 +42,8 @@ export interface LinkView {
   more: { loaded: number; total: number };
   /** How many tokens have price history from the market source, how many were looked up and have none; null when that is off. */
   market: { source: string; covered: number; none: number; pausedForS: number } | null;
+  /** Walk item 5: the served rows that draw a price line, by source; null until the server sends it. */
+  lines: { rows: number; drawn: number; bySource: Record<string, number> } | null;
   mode: FeedSnapshot["mode"] | null;
   tokens: number;
   files: number;
@@ -165,7 +169,7 @@ export function applyCoinPage(it: Item, t: Partial<WireToken>): void {
   if ("liquidityUsd" in t) it.liquidity = t.liquidityUsd ?? NaN;
 }
 
-function newItem(id: number): Item {
+export function newItem(id: number): Item {
   return {
     id,
     name: "",
@@ -464,7 +468,7 @@ export class LiveFeed implements Feed {
   private lastSnap: FeedSnapshot | null = null;
   private sweeping = false;
   private sweepKeys = new Set<string>();
-  private view: LinkView = { state: "connecting", more: { loaded: 0, total: 0 }, market: null, mode: null, tokens: 0, files: 0, fileProblems: 0, asOfMs: null, heardMs: null };
+  private view: LinkView = { state: "connecting", more: { loaded: 0, total: 0 }, market: null, lines: null, mode: null, tokens: 0, files: 0, fileProblems: 0, asOfMs: null, heardMs: null };
 
   /** The list's own address without the query: the rest of the scored set is read from `<base>/rest`. */
   private base: string;
@@ -534,6 +538,41 @@ export class LiveFeed implements Feed {
       }
     } catch {
       this.chainsRead.delete(key); // the next click tries again
+    }
+  }
+
+  /**
+   *
+   * over what it holds gives the list's real top coins without pulling the whole scored set (326a). Each list is read again at most every 30 s
+   * (the rest list it ranks changes every 30 s); `onLoaded` runs when new coins arrived.
+   */
+  private listRead = new Map<string, { at: number; n: number; total: number }>();
+  listTotal(key: string): number | null {
+    return this.listRead.get(key.replace(/^list:/, ""))?.total ?? null;
+  }
+  async loadList(key: string, n: number, onLoaded?: () => void): Promise<void> {
+    const k = key.replace(/^list:/, "");
+    const had = this.listRead.get(k);
+    if (this.base !== "/api/tokens" || (had && had.n >= n && Date.now() - had.at < 30_000)) return;
+    //
+    const from = had && Date.now() - had.at < 30_000 ? had.n : 0;
+    this.listRead.set(k, { at: had && from ? had.at : Date.now(), n, total: had?.total ?? 0 });
+    try {
+      const before = this.tailKeys.size;
+      for (let offset = from; offset < n; offset += 500) {
+        const res = await fetch(`${this.base}/list?list=${encodeURIComponent(k)}&offset=${offset}&limit=${Math.min(500, n - offset)}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(String(res.status));
+        const body = (await res.json()) as { total?: number; tokens: WireToken[] };
+        const r = this.listRead.get(k);
+        if (r && typeof body.total === "number") r.total = body.total;
+        this.addTokens(body.tokens ?? []);
+        if (!body.tokens?.length) break;
+      }
+      // the store takes a waiting page each frame: rank again once this one is in
+      if (this.tailKeys.size > before && onLoaded) setTimeout(onLoaded, 250);
+    } catch {
+      if (had) this.listRead.set(k, had);
+      else this.listRead.delete(k); // the next choice of this list tries again
     }
   }
 
@@ -696,7 +735,7 @@ export class LiveFeed implements Feed {
       this.lastSnap = snap;
       this.copy.load(snap);
       const firstTime = this.view.state !== "live";
-      this.view = { state: "live", more: { loaded: this.view.more.loaded, total: snap.cut ?? this.view.more.total }, market: snap.market ? { source: snap.market.source, covered: snap.market.covered, none: snap.market.none, pausedForS: snap.market.pausedForS } : null, mode: snap.mode, tokens: snap.tokens.length + this.view.more.loaded, files: snap.files, fileProblems: snap.problems.length, asOfMs: snap.asOfMs, heardMs: now };
+      this.view = { state: "live", more: { loaded: this.view.more.loaded, total: snap.cut ?? this.view.more.total }, market: snap.market ? { source: snap.market.source, covered: snap.market.covered, none: snap.market.none, pausedForS: snap.market.pausedForS } : null, lines: snap.lines ?? null, mode: snap.mode, tokens: snap.tokens.length + this.view.more.loaded, files: snap.files, fileProblems: snap.problems.length, asOfMs: snap.asOfMs, heardMs: now };
       // The rest of the scored set starts loading as soon as the first page has been heard.
       if (firstTime && this.base === "/api/tokens" && this.restWanted) void this.sweep();
     } catch {

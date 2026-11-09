@@ -14,6 +14,7 @@ import { avatarChar, liveImportance, SIM, statusLook, type Item } from "../world
 import { scoreColor } from "../world/scorecolor";
 import { SCORE_NOTICE, makeAdviceTag, makeByCount, makeScoreTag } from "./scorenotice";
 import { formatAsOf, scoredAgo } from "../world/format";
+import { tickerText } from "../world/nameless";
 import { makeEarlyTag, makeSocialTag, setEarly, showsEarly, showsSocial } from "./earlytag";
 import { EYE_OFF_ICON } from "./hidemenu";
 import { moderation } from "../world/moderation";
@@ -832,7 +833,7 @@ export function createDiscover(opts: DiscoverOptions): Discover {
         r.key = key;
         setText(r.name, it.name);
         // A scored token whose picture matches an earlier coin says so right here, beside its score (a warning, the score stays).
-        setText(r.sub, `${it.ticker} · ${ageText(it.ageMin)}${it.possibleCopy ? ` · possible copy of ${it.possibleCopy.ticker}` : ""}`);
+        setText(r.sub, `${tickerText(it)} · ${ageText(it.ageMin)}${it.possibleCopy ? ` · possible copy of ${it.possibleCopy.ticker}` : ""}`);
         r.sub.classList.toggle("warn", !!it.possibleCopy);
         const tagsKey = `${(it.tags ?? []).join(",")}|${it.createdCount ?? ""}`;
         if (tagsKey !== r.tagsKey) {

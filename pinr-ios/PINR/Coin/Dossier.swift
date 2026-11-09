@@ -57,7 +57,7 @@ struct Dossier: Equatable, Sendable {
     }
 
     enum Band: String, Sendable {
-        case strong = "Strong", fair = "Fair", weak = "Weak", clear = "Clear", notGraded = "Not graded", noData = "No data", notRead = "Not read"
+        case strong = "Strong", fair = "Fair", weak = "Weak", clear = "Clear", notGraded = "Not graded", readNotGraded = "Read, not graded", noData = "No data", notRead = "Not read"
     }
 
     struct Channel: Equatable, Sendable, Identifiable {

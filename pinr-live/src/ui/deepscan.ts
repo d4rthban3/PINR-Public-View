@@ -1,3 +1,4 @@
+import { UNTRACKED_WORDS, untrackedCoins } from "../world/evidencefetch";
 import { pinchScene } from "./pinch";
 import { observedWords, scoreShown } from "../world/hub";
 import { palette } from "./theme";
@@ -19,6 +20,7 @@ import { renderTrades, type TradesState, type TradesView } from "./tradeslist";
 import { foldPrice } from "../world/livecandle";
 import { ADVICE_LINE, SCORE_NOTICE } from "./scorenotice";
 import { scoredAgo } from "../world/format";
+import { tagChips } from "../world/tags";
 import { makeEarlyTag, makeSocialTag, setEarly, showsEarly, showsSocial } from "./earlytag";
 
 /**
@@ -118,7 +120,9 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
   const idText = el("div", "dsidt");
   const tickerEl = el("div", "dsticker");
   const nameEl = el("h1", "dsname");
-  idText.append(tickerEl, nameEl);
+  //
+  const tagsEl = el("div", "dstags");
+  idText.append(tickerEl, nameEl, tagsEl);
   idRow.append(avwrap, idText);
   const priceEl = el("div", "dsprice");
   const changeEl = el("div", "dschange");
@@ -312,7 +316,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
   let liveFrame = 0;
   let fetchEpoch = 0;
   let dossier: Dossier | null = null;
-  let dossierState: "loading" | "ok" | "error" = "loading";
+  let dossierState: "loading" | "ok" | "error" | "untracked" = "loading";
   let dossierAt = 0;
   let detailAt = 0;
   let detailFor: Item | null = null;
@@ -369,6 +373,8 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     if (epoch !== fetchEpoch) return;
     tradesState = got ? "ok" : "error";
     tradesView = got;
+    // walk item 3: a coin the feed does not track says so once, in PINR's plain words
+    if (!got && untrackedCoins.has(it.address.toLowerCase())) return void tradesBody.replaceChildren(el("p", "trnote", UNTRACKED_WORDS));
     renderTrades(tradesBody, tradesState, tradesView, undefined, item?.chain);
   }
 
@@ -406,13 +412,14 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     const got = await opts.fetchDossier(it.address);
     if (epoch !== fetchEpoch) return;
     dossier = got;
-    dossierState = got ? "ok" : "error";
+    dossierState = got ? "ok" : untrackedCoins.has(it.address.toLowerCase()) ? "untracked" : "error";
     renderDossier();
   }
 
   function renderPool(): void {
     const p = dossier?.pool;
     if (dossierState === "loading") return poolBody.replaceChildren(el("p", "dsnone", "Loading…"));
+    if (dossierState === "untracked") return poolBody.replaceChildren(el("p", "dsnone", UNTRACKED_WORDS));
     if (!p || p.state === "none") {
       // No pool-events file (Base, BNB): what the evidence file holds about the pool is shown instead, each row marked ● (read on chain) or ○ (reported), and "no receipt link yet" where it has none.
       const rows = dossier?.poolRows ?? [];
@@ -479,6 +486,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     const note = (text: string): void => scanBody.replaceChildren(el("p", "dsnone", text));
     if (dossierState === "loading") return note("Loading…");
     if (dossierState === "error") return note("The social scan is not read yet. PINR asks again shortly.");
+    if (dossierState === "untracked") return note(UNTRACKED_WORDS);
     const sc = dossier?.social;
     if (!sc) return note("No social scan has been run for this coin yet. Nothing is claimed either way.");
     const rows: HTMLElement[] = [];
@@ -596,6 +604,10 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
       for (const h of [checksBody, factsBody, readBody, linksBody]) note(h, "Not read yet. PINR asks again shortly.");
       return;
     }
+    if (dossierState === "untracked") {
+      for (const h of [checksBody, factsBody, readBody, linksBody]) note(h, UNTRACKED_WORDS);
+      return;
+    }
     if (!d || !d.available) {
       for (const h of [checksBody, factsBody, readBody, linksBody]) note(h, "No evidence file for this token yet.");
       return;
@@ -679,6 +691,11 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
       else pic.textContent = avatarChar(t.name);
       const names = el("div", "dssimname");
       names.append(el("b", undefined, t.ticker), el("span", undefined, `${money(t.mcap)} · ${ageText(t.ageMin)} old`));
+      if (t.tags?.length) {
+        const tg = el("span", "dstags");
+        tg.append(...tagChips(t.tags, t.createdCount));
+        names.append(tg);
+      }
       const look = statusLook(t);
       const sc = el("div", "dssimscore", look.text);
       if (look.numeric) sc.style.color = scoreColor(Number(t.value));
@@ -815,6 +832,11 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
 
     setText(tickerEl, it.ticker !== "—" ? it.ticker : it.detail);
     setText(nameEl, it.name);
+    const tagKey = `${(it.tags ?? []).join(",")}|${it.createdCount ?? ""}`;
+    if (tagsEl.dataset.k !== tagKey) {
+      tagsEl.dataset.k = tagKey;
+      tagsEl.replaceChildren(...tagChips(it.tags ?? [], it.createdCount));
+    }
     setText(miniName, it.name);
 
     // price + change for the range (or up to the point being scrubbed)
@@ -1139,9 +1161,9 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
         void opts.fetchDetail(item);
       }
       // recent trades: every 20 seconds (8 after a failure)
-      if (item.address && Date.now() - tradesAt > (tradesState === "error" ? 8_000 : 20_000)) void loadTrades();
+      if (item.address && !untrackedCoins.has(item.address.toLowerCase()) && Date.now() - tradesAt > (tradesState === "error" ? 8_000 : 20_000)) void loadTrades();
       // the evidence: retried after a failure, refreshed every few minutes (the engine re-scores over time)
-      if (item.address && dossierState !== "loading" && (showsEarly(item) !== dossierEarly || Date.now() - dossierAt > (dossierState === "error" ? 8_000 : 180_000))) void loadDossier();
+      if (item.address && dossierState !== "loading" && dossierState !== "untracked" && (showsEarly(item) !== dossierEarly || Date.now() - dossierAt > (dossierState === "error" ? 8_000 : 180_000))) void loadDossier();
     },
   };
 }

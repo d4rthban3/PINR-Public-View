@@ -1,3 +1,4 @@
+import type { NOT_TRACKED } from "./orbit";
 import type { ChartResult } from "../../server/market";
 import { foldPrice, type Candle } from "../world/livecandle";
 import { changeWindowLabel, COIN_RANGES, formatPrice, type RangeId } from "../world/format";
@@ -30,7 +31,8 @@ export interface CoinPageOptions extends GestureOptions {
   fetchChart(address: string, range: RangeId, launchpad?: string | null): Promise<ChartResult>;
   /** TradingView's symbol for a coin it lists (EXCHANGE:NAME), else null: the TradingView link then opens that chart. */
   fetchTvSymbol(address: string): Promise<string | null>;
-  fetchEvidence(address: string): Promise<Evidence | null>;
+  /** NOT_TRACKED (orbit.ts) when the feed does not track the coin (walk item 3). */
+  fetchEvidence(address: string): Promise<Evidence | null | typeof NOT_TRACKED>;
   fetchEvents(address: string): Promise<ChartEvent[]>;
 }
 
@@ -74,6 +76,19 @@ export function tradingViewHref(symbol: string | null | undefined): string {
   return symbol && /^[A-Z0-9_]{2,40}:[A-Z0-9_.\-]{2,60}$/.test(symbol) ? `${TRADINGVIEW_CHART}?symbol=${encodeURIComponent(symbol)}` : TRADINGVIEW_CHART;
 }
 
+/**
+ *
+ * only when tapped, so a visitor who never taps loads nothing from TradingView. The widget is TradingView's own (its logo and branding stay); it draws TradingView's
+ * data for the listed symbol, never PINR's. The script address and the settings are TradingView's embed format; the site's security policy must allow them (server/staticsite.ts).
+ */
+/** ON since Site's security policy allows TradingView's widget (script-src https://s3.tradingview.com and frame-src https://www.tradingview-widget.com in server/staticsite.ts): switch it off together with those two entries, never alone. */
+export const TV_WIDGET_ON = true;
+export const TV_WIDGET_SCRIPT = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+export function tvWidgetConfig(symbol: string, theme: "dark" | "light"): Record<string, unknown> | null {
+  if (!/^[A-Z0-9_]{2,40}:[A-Z0-9_.\-]{2,60}$/.test(symbol)) return null;
+  return { symbol, theme, interval: "15", timezone: "Etc/UTC", locale: "en", autosize: true, allow_symbol_change: false, hide_side_toolbar: true, calendar: false, support_host: "https://www.tradingview.com" };
+}
+
 /** The outside chart sites for a coin's full chart. Only what applies to the coin's chain; the Pump.fun page only for a Pump.fun coin. */
 export function chartLinks(it: Pick<Item, "address" | "chain" | "launchpad">): { label: string; href: string }[] {
   const a = it.address;
@@ -96,9 +111,7 @@ export function chartLinks(it: Pick<Item, "address" | "chain" | "launchpad">): {
   if (slug === "base" && /virtuals/i.test(lp)) out.push({ label: "Virtuals", href: `https://app.virtuals.io/prototypes/${e}` });
   if (slug === "bsc" && /four\.?meme/i.test(lp)) out.push({ label: "Four.meme", href: `https://four.meme/token/${e}` });
   if (slug === "bsc" && /flap/i.test(lp)) out.push({ label: "Flap", href: `https://flap.sh/bnb/${e}` });
-  // TradingView: the coin's own chart once TradingView is known to list it (the page swaps the address in, see tradingViewHref); until then, and for a coin it
-  // does not list, TradingView's chart page, whose own search box finds the coin (TradingView has no address search by link: checked 2026-10-23).
-  out.push({ label: "TradingView", href: TRADINGVIEW_CHART });
+  //
   return out;
 }
 
@@ -489,7 +502,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
       const lw = await import("lightweight-charts");
       const chart = lw.createChart(plot, {
         autoSize: true,
-        layout: { background: { type: lw.ColorType.Solid, color: "transparent" }, textColor: css("--mute", "#9aa1ae"), fontFamily: css("--font", "system-ui"), attributionLogo: false },
+        layout: { background: { type: lw.ColorType.Solid, color: "transparent" }, textColor: css("--mute", "#9aa1ae"), fontFamily: css("--font", "system-ui"), attributionLogo: true },
         grid: { vertLines: { visible: false }, horzLines: { visible: false } },
         rightPriceScale: { borderVisible: false, visible: false, scaleMargins: { top: 0.12, bottom: 0.12 } },
         timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, rightOffset: 2, ticksVisible: false, fixLeftEdge: true, fixRightEdge: true,
@@ -750,7 +763,41 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
       const e0 = epoch;
       void opts.fetchTvSymbol(next.address).then((sym) => {
         if (e0 !== epoch || !sym) return;
-        for (const a of links.querySelectorAll<HTMLAnchorElement>("a.cplink")) if (a.textContent?.startsWith("TradingView")) a.href = tradingViewHref(sym);
+        const a = el("a", "cplink", "TradingView ↗");
+        a.href = tradingViewHref(sym);
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        if (!TV_WIDGET_ON) {
+          links.append(a);
+          links.hidden = false;
+          return;
+        }
+        const b = el("button", "cplink cptvbtn", "TradingView chart");
+        b.type = "button";
+        b.setAttribute("aria-expanded", "false");
+        let box: HTMLElement | null = null;
+        b.onclick = () => {
+          if (!box) {
+            box = el("div", "cptvbox");
+            const cfg = tvWidgetConfig(sym, document.documentElement.dataset.theme === "light" ? "light" : "dark");
+            if (!cfg) return;
+            const holder = el("div", "tradingview-widget-container");
+            const inner = el("div", "tradingview-widget-container__widget");
+            const sc = document.createElement("script");
+            sc.src = TV_WIDGET_SCRIPT;
+            sc.async = true;
+            sc.text = JSON.stringify(cfg);
+            holder.append(inner, sc);
+            box.append(holder);
+            links.after(box);
+            b.setAttribute("aria-expanded", "true");
+            return;
+          }
+          box.hidden = !box.hidden;
+          b.setAttribute("aria-expanded", String(!box.hidden));
+        };
+        links.append(a, b);
+        links.hidden = false;
       });
     }
     scrub = -1;

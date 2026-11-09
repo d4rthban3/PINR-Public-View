@@ -10,6 +10,7 @@ import { DEFAULT_LIST, isListFilter } from "./lists";
 import { prof } from "../engine/prof";
 import { getRoster, hasSomethingToShow, selectAndRank, type Filter } from "./filters";
 import { groupOf, type Group } from "./groups";
+import { isNameless, tickerText } from "./nameless";
 import { tileNumber } from "./scoretile";
 import { scoreColor } from "./scorecolor";
 import { money } from "./discoverlist";
@@ -83,6 +84,17 @@ export function lodFor(screenW: number, current: number): number {
   return l;
 }
 
+/**
+ *
+ * that glows in its Token health colour, like a star map; names and the card's own look come back on zoom-in. Decided from the tile's width on screen,
+ * with a gap between going in and coming out so it never flickers at the edge.
+ */
+export const DOT_IN_PX = 38;
+export const DOT_OUT_PX = 46;
+export function dotFor(screenW: number, current: boolean): boolean {
+  return current ? screenW < DOT_OUT_PX : screenW < DOT_IN_PX;
+}
+
 /** What the stream layer needs to know about a tile that is on screen right now. */
 export interface StreamTile {
   id: number;
@@ -150,6 +162,8 @@ interface CardView {
   tier: number;
   /** The score colour last written. */
   valueColor: string;
+  /** The glow colour of the card's dot (its Token health colour, or the muted colour when there is no reading); written only when it changes. */
+  dotColor: string;
   /** performance.now() of this tile's last flash restart. */
   flashAt: number;
   /** Which sizing round this tile's CSS width/height was last written in (see `epoch`). */
@@ -256,9 +270,13 @@ function build(item: Item): Pick<CardView, "el" | "glass" | "valueEl" | "badge" 
   name.textContent = item.name;
   const tick = document.createElement("div");
   tick.className = "tick";
-  tick.textContent = item.ticker;
+  tick.textContent = tickerText(item);
+  tick.classList.toggle("nl", isNameless(item));
   const ttags = document.createElement("div");
   ttags.className = "ttags";
+  // The chips are drawn when the tile is made: render() only redraws them when a coin's tags CHANGE after that (release checklist line 18: a tile made
+  // after its coin's tags were known showed none).
+  ttags.append(...tileTagChips(item.tags ?? [], item.createdCount));
   idtxt.append(name, tick, ttags);
   ident.append(avwrap, idtxt);
   const detail = document.createElement("div");
@@ -353,11 +371,14 @@ export class CardField {
   /** Counts up each time the arrangement is rebuilt, so other layers know to start fresh. */
   layoutVersion = 0;
   private lod = -1;
+  private dot = false;
   /** Bumped whenever tile sizes change (zoom level or new layout). Tiles catch up lazily, only while on screen. */
   private epoch = 0;
   /** CSS size of a tile = world size x m; the transform scales it back to its true on-screen size. */
   private m = 1;
   private needsLayout = true;
+  private growWanted = false;
+  private growing: { ids: number[]; todo: number[]; byItem: Map<number, Item> } | null = null;
   private warmed = new Set<string>();
   private warmEl: HTMLElement | null = null;
   private warmTimer = 0;
@@ -467,6 +488,15 @@ export class CardField {
     this.needsLayout = true;
   }
 
+  /**
+   *
+   * fade-out and no rebuild; the tiles already shown stay exactly as they are. If the ranking is not the shown tiles followed by new ones (anything moved, left
+   * or was reordered) it falls back to the ordinary dissolve and rebuild, so a grow can never leave a wrong page.
+   */
+  grow(): void {
+    this.growWanted = true;
+  }
+
   get currentFilter(): Filter {
     return this.filter;
   }
@@ -532,6 +562,13 @@ export class CardField {
       this.stage.dataset.lod = String(lod);
       this.glassRoot.dataset.lod = String(lod);
       this.applySizes();
+    }
+    //
+    const dot = dotFor(CARD_W * cam.scale, this.dot);
+    if (dot !== this.dot && !this.frozen) {
+      this.dot = dot;
+      this.stage.dataset.dot = dot ? "1" : "0";
+      this.glassRoot.dataset.dot = dot ? "1" : "0";
     }
     prof.mark("cards:prelude");
     this.labelsFor(cam, lod);
@@ -633,6 +670,9 @@ export class CardField {
 
   /** Rebuild the arrangement when asked: the very first time at once, afterwards dissolve out, rebuild, dissolve in. */
   private arrange(dt: number): void {
+    if (this.growWanted && !this.needsLayout && this.fadeDir === 0 && !this.building && !this.firstLayout) {
+      if (this.growStep()) this.growWanted = false;
+    }
     if (this.needsLayout && this.fadeDir === 0) {
       if (this.firstLayout) {
         // The first arrangement fades in from nothing.
@@ -692,6 +732,7 @@ export class CardField {
       specY: 1e9,
       flashAt: 0,
       valueColor: "",
+      dotColor: "",
     };
     this.gWorld.appendChild(c.glass);
     this.cWorld.appendChild(c.el);
@@ -752,6 +793,7 @@ export class CardField {
     if (this.building && this.needsLayout) this.building = null;
     if (!this.building) {
       this.needsLayout = false;
+      this.growing = null; // an append in progress is dropped: this is a full arrangement
       const allItems = this.storeRef?.items ?? [];
       const items = this.pickedGroup ? allItems.filter((it) => groupOf(it) === this.pickedGroup) : allItems;
       //
@@ -825,6 +867,88 @@ export class CardField {
     return true;
   }
 
+  /**
+   * One frame of an append (see `grow`). Returns true when it is finished or has handed over to the ordinary rebuild, false while more tiles are still to be made.
+   * The tiles shown keep their place, size, motion and opacity: only the new ones are made and placed, in the grid's own order (row after row, so the old rows do not move).
+   */
+  private growStep(): boolean {
+    if (!this.growing) {
+      const allItems = this.storeRef?.items ?? [];
+      const items = this.pickedGroup ? allItems.filter((it) => groupOf(it) === this.pickedGroup) : allItems;
+      const ranked = selectAndRank(this.filter, isListFilter(this.filter) ? items : items.filter(hasSomethingToShow));
+      const ids = ranked.map((r) => r.id).filter((id) => !this.bad.has(id));
+      const shown = new Set(this.active.map((c) => c.item.id));
+      // Only an append is allowed: every tile shown is still wanted and sits in the first places of the new ranking, and no tile shown is hidden.
+      let ok = shown.size <= ids.length && this.cards.every((c) => shown.has(c.item.id) === !c.gone);
+      for (let i = 0; ok && i < shown.size; i++) if (!shown.has(ids[i]!)) ok = false;
+      if (!ok) {
+        this.needsLayout = true; // not an append: the ordinary dissolve and rebuild
+        return true;
+      }
+      this.growing = { ids, todo: ids.filter((id) => !this.byId.has(id)), byItem: new Map(items.map((it) => [it.id, it])) };
+    }
+    const g = this.growing;
+    let made = 0;
+    while (g.todo.length && made < TILES_PER_FRAME) {
+      const id = g.todo.shift()!;
+      const it = g.byItem.get(id);
+      if (!it || this.byId.has(id)) continue;
+      made++;
+      try {
+        this.add(it);
+      } catch (e) {
+        this.bad.add(id);
+        if (this.storeRef) this.storeRef.skipped++;
+        console.error("PINR: a tile could not be made and was skipped:", id, e);
+      }
+    }
+    if (g.todo.length) return false;
+    this.growing = null;
+    const shown = new Set(this.active.map((c) => c.item.id));
+    const rects = layoutGrid(
+      g.ids.filter((id) => this.byId.has(id)),
+      this.cols,
+      CARD_W,
+      this.cellH,
+      GAP,
+    );
+    const added: CardView[] = [];
+    for (const c of this.cards) {
+      if (shown.has(c.item.id)) continue;
+      const r = rects.get(c.item.id);
+      const gone = r === undefined;
+      if (gone !== c.gone) {
+        c.gone = gone;
+        c.el.classList.toggle("gone", gone);
+        c.glass.classList.toggle("gone", gone);
+      }
+      if (!r) continue;
+      c.cx = r.x + r.w / 2;
+      c.cy = r.y + r.h / 2;
+      c.w = r.w;
+      c.h = r.h;
+      if (c.tier !== 1) {
+        c.el.classList.add("t1");
+        c.tier = 1;
+      }
+      c.tx = NaN;
+      c.grow.x = 1;
+      c.grow.v = 0;
+      c.ox.x = c.oy.x = 0;
+      c.ox.v = c.oy.v = 0;
+      added.push(c);
+    }
+    if (added.length) {
+      for (const c of added) this.active.push(c);
+      for (const c of added) this.bodies.push({ cx: c.cx, cy: c.cy, w: c.w, h: c.h, grow: 1 });
+      const o = new Float32Array(this.active.length * 2);
+      o.set(this.offsets.subarray(0, Math.min(this.offsets.length, o.length)));
+      this.offsets = o;
+      this.layoutVersion++; // the scroll limits are read again; the epoch is left alone so no tile already shown is touched
+    }
+    return true;
+  }
+
   /** Sizes changed. Nothing is written here: each tile updates itself the moment it is next on screen. */
   private applySizes(): void {
     this.epoch++;
@@ -895,22 +1019,27 @@ export class CardField {
   private sRest = 0;
   private lastS = 0;
   private lastWt = "";
+  /** The tiles worked on this frame (on screen, with the margin, or pressed): their places in `active`, their bodies and their pushes. Reused every frame. */
+  private workIdx: number[] = [];
+  private workBodies: Body[] = [];
+  private workOut = new Float32Array(0);
   private live(dt: number): void {
     this.frameNo++;
+    const work = this.workIdx;
+    work.length = 0;
     const clock = performance.now();
     this.factsDue = clock - this.factsAt > 1000;
     if (this.factsDue) this.factsAt = clock;
     for (let i = 0; i < this.active.length; i++) {
       const c = this.active[i]!;
       const it = c.item;
-      const flagged = it.status === "flag";
-      const heat = flagged ? 0 : Math.min(1, it.spike / 0.6);
       const pressed = it.id === this.pressedId;
       //
-      if (c.off && !pressed && c.lookKey !== "") {
-        this.bodies[i]!.grow = c.grow.x;
-        continue;
-      }
+      // Decided first, before anything about the tile is read: with thousands of tiles this line is the whole cost of the ones far off screen.
+      if (c.off && !pressed && c.lookKey !== "") continue;
+      work.push(i);
+      const flagged = it.status === "flag";
+      const heat = flagged ? 0 : Math.min(1, it.spike / 0.6);
       c.grow.target = 1 + Math.max(SIM.maxSwell * heat, pressed ? this.pressedSwell : 0);
       // Pressing is snappier than the slow swell of an event.
       stepSpring(c.grow, pressed || this.pressedId !== null ? 12 : 7, dt);
@@ -929,7 +1058,8 @@ export class CardField {
           c.ttagsEl.replaceChildren(...tileTagChips(it.tags ?? [], it.createdCount));
         }
         setText(c.nameEl, it.name);
-        setText(c.tickEl, it.ticker);
+        setText(c.tickEl, tickerText(it));
+        c.tickEl.classList.toggle("nl", isNameless(it));
         setText(c.tagEl, it.tag);
         c.tagEl.parentElement?.classList.toggle("none", !it.tag);
         const picKey = `${it.image ?? ""}|${it.name}`;
@@ -1002,6 +1132,15 @@ export class CardField {
           }
         }
       }
+      // The dot's glow: the card's Token health colour; a coin with no reading is a dim ring that says "not read", never a score colour.
+      // A card that shows a number (a thin reading with a coverage above 0 still shows one) glows in that number's colour, exactly as its number does.
+      const showsNumber = c.lookKind === "ok" || (c.lookKind === "thin" && it.coverage > 0 && Number.isFinite(Number(it.value)));
+      const dc = showsNumber && Number.isFinite(c.shown) ? scoreColor(c.shown) : "var(--mute)";
+      if (dc !== c.dotColor) {
+        c.dotColor = dc;
+        c.el.style.setProperty("--dot", dc);
+        c.el.classList.toggle("noread", dc === "var(--mute)");
+      }
       // The glow colour follows the latest event.
       const evSide = it.evSide;
       if (evSide !== c.ev) {
@@ -1038,11 +1177,22 @@ export class CardField {
         c.glass.style.setProperty("--heat", String(h));
       }
     }
-    pressureOffsets(this.bodies, this.offsets, CARD_W / 170);
-    for (let i = 0; i < this.active.length; i++) {
-      const c = this.active[i]!;
-      c.ox.target = this.offsets[i * 2]!;
-      c.oy.target = this.offsets[i * 2 + 1]!;
+    // Item 134 (lag): with lists that hold thousands of tiles, only the tiles worked on above (on screen with the margin, or pressed) swell, push their neighbours and
+    // spring this frame; a tile far off screen is passed over without a visit. Its push and spring catch up on the frames after it scrolls in.
+    const n = work.length;
+    const wb = this.workBodies;
+    wb.length = n;
+    for (let j = 0; j < n; j++) {
+      const b = this.bodies[work[j]!]!;
+      b.grow = this.active[work[j]!]!.grow.x;
+      wb[j] = b;
+    }
+    if (this.workOut.length < n * 2) this.workOut = new Float32Array(n * 2 + 64);
+    pressureOffsets(wb, this.workOut, CARD_W / 170);
+    for (let j = 0; j < n; j++) {
+      const c = this.active[work[j]!]!;
+      c.ox.target = this.workOut[j * 2]!;
+      c.oy.target = this.workOut[j * 2 + 1]!;
       stepSpring(c.ox, 8, dt);
       stepSpring(c.oy, 8, dt);
     }

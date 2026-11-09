@@ -1,7 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-bg="static">
   <head>
     <meta charset="utf-8" />
+    <link rel="preload" href="/art/pinr-pin.m4a" as="fetch" type="audio/mp4" crossorigin="anonymous" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
@@ -23,35 +26,26 @@
       /* The anchor takes the background's own placement (its drift and swell against the camera) from bootveil.js, so the two logos stay one. */
       #bootCover .boot-anchor{position:absolute;inset:0;transform-origin:50% 50%}
       #bootCover .boot-glow{position:absolute;left:50%;top:50%;width:calc(var(--u)*470);height:calc(var(--u)*470);margin:calc(var(--u)*-235) 0 0 calc(var(--u)*-235);border-radius:50%;pointer-events:none;filter:blur(48px);background:radial-gradient(circle,rgba(192,132,252,.35) 0%,rgba(139,92,246,.15) 60%,rgba(0,0,0,0) 100%);animation:boot-pulse 6.5s cubic-bezier(.4,0,.6,1) infinite}
-      #bootCover .boot-mark{position:absolute;left:50%;top:50%;width:calc(var(--u)*292.95);height:calc(var(--u)*345.6);margin:calc(var(--u)*-172.8) 0 0 calc(var(--u)*-146.475);transform-origin:50% 50%}
+      #bootCover .boot-mark{position:absolute;left:50%;top:50%;width:166px;height:196px;margin:-98px 0 0 -83px;transform-origin:50% 50%}
       #bootCover .boot-mark svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-      #bootCover .bl-big{animation:boot-bigin .95s cubic-bezier(.2,.8,.25,1) both}
-      #bootCover .bl-small{animation:boot-smallin .95s cubic-bezier(.2,.8,.25,1) .1s both}
-      #bootCover .boot-ring{position:absolute;left:50%;top:50%;width:calc(var(--u)*212);height:calc(var(--u)*212);margin:calc(var(--u)*-106) 0 0 calc(var(--u)*-106);border-radius:50%;border:2px solid #d6ff3c;opacity:0;pointer-events:none;animation:boot-radar 1.3s cubic-bezier(.2,.6,.3,1) 1.05s both}
-      #bootCover .boot-ring.r2{animation-delay:1.45s}
-      @media (min-width:760px){
-        #bootCover .bl-big{animation-duration:1.7s}
-        #bootCover .bl-small{animation-duration:1.7s;animation-delay:.25s}
-        #bootCover .boot-ring{animation-duration:1.9s;animation-delay:2.1s}
-        #bootCover .boot-ring.r2{animation-delay:2.8s}
-        #bootCover.boot-hide .boot-veil{animation-duration:2.6s}
-        #bootCover.boot-hide .boot-fore{animation-duration:1.2s}
-      }
-      /* The travel is in screen units (cq), so the blades start off the screen at every size. */
-      @keyframes boot-bigin{from{transform:translate(65cqw,-65cqh);opacity:0}to{transform:none;opacity:1}}
-      @keyframes boot-smallin{from{transform:translate(-65cqw,65cqh);opacity:0}to{transform:none;opacity:1}}
-      @keyframes boot-radar{0%{transform:scale(.4);opacity:.7}100%{transform:scale(4.2);opacity:0}}
-      #bootCover .boot-bar{position:absolute;left:50%;margin-left:-32px;top:calc(50% + var(--u)*172.8 + 40px);width:64px;height:2px;background:linear-gradient(90deg,transparent,#bef264,transparent);animation:boot-pulse 2s cubic-bezier(.4,0,.6,1) infinite}
+      #bootCover .bl-big{animation:boot-bigin 1.15s cubic-bezier(.4,0,.2,1) .1s both}
+      #bootCover .bl-small{animation:boot-smallin 1.15s cubic-bezier(.4,0,.2,1) .1s both}
+      #bootCover:not(.boot-go) .bl-big,#bootCover:not(.boot-go) .bl-small{animation-play-state:paused}
+      /*
+         southwest; the small blade points up-right too (0.63 right, 0.77 up) and comes in from the southwest toward the northeast. They stop and form the mark; the radar blip is gone. The travel is in screen units (cq), so they start off the screen at every size. */
+      @keyframes boot-bigin{from{transform:translate(calc(max(100cqw,100cqh)*.59),calc(max(100cqw,100cqh)*-.80));opacity:0}to{transform:none;opacity:1}}
+      @keyframes boot-smallin{from{transform:translate(calc(max(100cqw,100cqh)*-.63),calc(max(100cqw,100cqh)*.77));opacity:0}to{transform:none;opacity:1}}
+      #bootCover .boot-bar{position:absolute;left:50%;margin-left:-32px;top:calc(50% + 98px + 40px);width:64px;height:2px;background:linear-gradient(90deg,transparent,#bef264,transparent);animation:boot-pulse 2s cubic-bezier(.4,0,.6,1) infinite}
       #bootCover.boot-hide{pointer-events:none}
-      #bootCover.boot-hide .boot-veil{animation:boot-fade 2s linear forwards}
-      #bootCover.boot-hide .boot-fore{animation:boot-fade .9s linear forwards}
+      #bootCover.boot-hide .boot-veil{animation:boot-fade 2s linear forwards} /* the page fades in from 2.0 s to 4.0 s, the sound's length */
+      #
       @keyframes boot-fade{to{opacity:0}}
       @keyframes boot-pulse{50%{opacity:.5}}
-      @media (prefers-reduced-motion:reduce){#bootCover .boot-glow,#bootCover .boot-bar,#bootCover .bl-big,#bootCover .bl-small{animation:none}#bootCover .boot-ring{display:none}#bootCover.boot-hide .boot-veil,#bootCover.boot-hide .boot-fore{animation-duration:.25s}}
+      @media (prefers-reduced-motion:reduce){#bootCover .boot-glow,#bootCover .boot-bar,#bootCover .bl-big,#bootCover .bl-small{animation:none}#bootCover.boot-hide .boot-veil,#bootCover.boot-hide .boot-fore{animation-duration:.25s}}
     </style>
   </head>
   <body>
-    <div id="bootCover" role="status" aria-label="Loading"><div class="boot-veil"></div><div class="boot-fore"><div class="boot-anchor"><div class="boot-glow"></div><div class="boot-ring"></div><div class="boot-ring r2"></div><div class="boot-mark"><svg class="bl-big" viewBox="0 0 217 256" aria-hidden="true"><path fill="#F4EEFF" d="M182.75,7.01c6.93-8.26,19.39-9.34,27.63-2.38,8.24,6.96,9.29,19.5,2.37,27.78C141.79,106.89,70.86,181.39-.1,255.86,60.86,172.91,121.8,89.97,182.75,7.01Z"/><path fill="#D6FF3C" d="M182.75,7.01c6.97-8.33,19.34-9.39,27.63-2.38h0c8.29,7.01,9.34,19.45,2.37,27.78l-38.14,14.94h0l8.16-40.34h-.02Z"/></svg><svg class="bl-small" viewBox="0 0 217 256" aria-hidden="true"><path fill="#CDB6FE" d="M183.63,92.04h0l-108.17,157.94c-5.26,6.51-14.86,7.57-21.44,2.36h0c-6.57-5.2-7.63-14.7-2.37-21.21L183.63,92.04Z"/><path fill="#D6FF3C" d="M75.49,250.04c-5.26,6.43-14.88,7.48-21.45,2.35h0c-6.59-5.14-7.65-14.51-2.36-20.94l29.42-12.04h0l-5.58,30.64h-.02Z"/></svg></div></div><div class="boot-bar"></div></div></div>
+    <div id="bootCover" role="status" aria-label="Loading"><div class="boot-veil"></div><div class="boot-fore"><div class="boot-anchor"><div class="boot-glow"></div><div class="boot-mark"><svg class="bl-big" viewBox="0 0 217 256" aria-hidden="true"><path fill="#F4EEFF" d="M182.75,7.01c6.93-8.26,19.39-9.34,27.63-2.38,8.24,6.96,9.29,19.5,2.37,27.78C141.79,106.89,70.86,181.39-.1,255.86,60.86,172.91,121.8,89.97,182.75,7.01Z"/><path fill="#D6FF3C" d="M182.75,7.01c6.97-8.33,19.34-9.39,27.63-2.38h0c8.29,7.01,9.34,19.45,2.37,27.78l-38.14,14.94h0l8.16-40.34h-.02Z"/></svg><svg class="bl-small" viewBox="0 0 217 256" aria-hidden="true"><path fill="#CDB6FE" d="M183.63,92.04h0l-108.17,157.94c-5.26,6.51-14.86,7.57-21.44,2.36h0c-6.57-5.2-7.63-14.7-2.37-21.21L183.63,92.04Z"/><path fill="#D6FF3C" d="M75.49,250.04c-5.26,6.43-14.88,7.48-21.45,2.35h0c-6.59-5.14-7.65-14.51-2.36-20.94l29.42-12.04h0l-5.58,30.64h-.02Z"/></svg></div></div><div class="boot-bar"></div></div></div>
     <script src="/bootveil.js"></script>
     <div id="bg">
       <!--

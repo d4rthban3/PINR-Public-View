@@ -92,6 +92,8 @@ export function createCompass(onTap: () => void): Compass {
       if (on === map) return;
       map = on;
       b.classList.toggle("map", on);
+      //
+      document.documentElement.classList.toggle("inmap", on);
       label();
     },
   };
