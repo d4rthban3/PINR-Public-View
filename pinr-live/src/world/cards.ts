@@ -215,6 +215,23 @@ export function pictureOf(src: string, name: string, address?: string | null): H
   img.draggable = false;
   img.referrerPolicy = "no-referrer";
   img.loading = "lazy";
+  // Walk item 2 ("a picture or the letter, never a blank"): the coin's letter sits under the picture from the start, and the picture is shown only once it has loaded,
+  // so a picture that is still coming, waiting for its retry or failed never shows an empty circle or the browser's broken-picture icon. The letter stays until a picture loads.
+  img.style.opacity = "0";
+  img.addEventListener("load", () => {
+    img.style.opacity = "";
+    img.parentElement?.querySelector(":scope > .pletter")?.remove();
+  });
+  queueMicrotask(() => {
+    const holder = img.parentElement;
+    if (!holder || img.complete && img.naturalWidth > 0) return;
+    if (holder.textContent === "" && !holder.querySelector(":scope > .pletter")) {
+      const l = document.createElement("span");
+      l.className = "pletter";
+      l.textContent = avatarChar(name);
+      holder.prepend(l);
+    }
+  });
   // A picture loaded straight from its own host that fails (the host is down or refuses) is asked of the Air once instead; one more try a few
   // seconds later for a picture our own server was still fetching; after that the plain initial stays.
   let tried = false;
@@ -232,7 +249,7 @@ export function pictureOf(src: string, name: string, address?: string | null): H
     }
     const holder = img.parentElement;
     img.remove();
-    if (holder && holder.childElementCount === 0) holder.textContent = avatarChar(name);
+    if (holder && holder.childElementCount === 0) holder.textContent = avatarChar(name); // (the letter under the picture is already there when the holder was empty)
   });
   img.src = src;
   return img;
@@ -1020,6 +1037,20 @@ export class CardField {
   private lastS = 0;
   private lastWt = "";
   /** The tiles worked on this frame (on screen, with the margin, or pressed): their places in `active`, their bodies and their pushes. Reused every frame. */
+  /**
+   * Item 134 (lag): the on-screen index. `order` holds the places in `active` sorted by the tile's row (cy), so the rows that can be on screen are found by two binary searches
+   * instead of a visit to every tile; `onNow` is the tiles that were on screen at the last render. Rebuilt only when the arrangement changes.
+   */
+  private order: Int32Array = new Int32Array(0);
+  private orderCy: Float32Array = new Float32Array(0);
+  private orderFor = -1;
+  private fullPass = true;
+  private mark: Int32Array = new Int32Array(0);
+  private markNo = 0;
+  private cand: number[] = [];
+  private onNow: number[] = [];
+  private onNext: number[] = [];
+  private indexOfId = new Map<number, number>();
   private workIdx: number[] = [];
   private workBodies: Body[] = [];
   private workOut = new Float32Array(0);
@@ -1030,13 +1061,18 @@ export class CardField {
     const clock = performance.now();
     this.factsDue = clock - this.factsAt > 1000;
     if (this.factsDue) this.factsAt = clock;
-    for (let i = 0; i < this.active.length; i++) {
+    // Only the tiles that were on screen at the last render (and a pressed one) are visited; a tile far off screen costs nothing here.
+    const pressedAt = this.pressedId === null ? -1 : (this.indexOfId.get(this.pressedId) ?? -1);
+    const onN = this.onNow.length;
+    for (let q = 0; q <= onN; q++) {
+      const i = q < onN ? this.onNow[q]! : pressedAt;
+      if (i < 0 || i >= this.active.length || (q === onN && this.onNow.includes(i))) continue;
       const c = this.active[i]!;
       const it = c.item;
       const pressed = it.id === this.pressedId;
       //
       // Decided first, before anything about the tile is read: with thousands of tiles this line is the whole cost of the ones far off screen.
-      if (c.off && !pressed && c.lookKey !== "") continue;
+      if (c.off && !pressed) continue;
       work.push(i);
       const flagged = it.status === "flag";
       const heat = flagged ? 0 : Math.min(1, it.spike / 0.6);
@@ -1225,7 +1261,13 @@ export class CardField {
       this.cWorld.style.transform = wt;
     }
 
-    for (const c of this.active) {
+    this.buildCandidates(k, s, wy, view.h);
+    const cand = this.cand;
+    const newOn = this.onNext;
+    newOn.length = 0;
+    for (let q = 0; q < cand.length; q++) {
+      const ai = cand[q]!;
+      const c = this.active[ai]!;
       const g = c.grow.x;
       // Swell is a scale about the tile's own centre, so its place never changes.
       const gr = this.group;
@@ -1260,6 +1302,7 @@ export class CardField {
         c.glass.classList.toggle("off", !vis);
       }
       if (!vis) continue;
+      newOn.push(ai);
 
       let t = this.vis[this.nVis];
       if (!t) t = this.vis[this.nVis] = { id: 0, x: 0, y: 0, w: 0, h: 0, heat: 0, imp: 0, item: c.item };
@@ -1301,6 +1344,58 @@ export class CardField {
         c.glass.style.zIndex = String(z);
       }
     }
+    this.onNext = this.onNow;
+    this.onNow = newOn;
+  }
+
+  /**
+   * The places in `active` the render pass must look at: every tile in the rows that can reach the screen (with a margin for a swell or a push), and every tile that was
+   * on screen last frame (so it can be marked off once it has left). After a new arrangement every tile is looked at once. The rest are already off and cost nothing.
+   */
+  private buildCandidates(k: number, s: number, wy: number, viewH: number): void {
+    const n = this.active.length;
+    const cand = this.cand;
+    cand.length = 0;
+    if (this.orderFor !== this.layoutVersion || this.order.length !== n) {
+      this.orderFor = this.layoutVersion;
+      const idx = Array.from({ length: n }, (_, i) => i).sort((a, b) => this.active[a]!.cy - this.active[b]!.cy);
+      this.order = Int32Array.from(idx);
+      this.orderCy = Float32Array.from(idx, (i) => this.active[i]!.cy);
+      this.mark = new Int32Array(n);
+      this.indexOfId.clear();
+      for (let i = 0; i < n; i++) this.indexOfId.set(this.active[i]!.item.id, i);
+      this.fullPass = true;
+      this.onNow.length = 0;
+    }
+    const gr = this.group;
+    if (this.fullPass || !(gr.scale > 0) || !(k > 0)) {
+      this.fullPass = false;
+      for (let i = 0; i < n; i++) cand.push(i);
+      return;
+    }
+    const no = ++this.markNo;
+    // Screen y of a row centre: wy + k * s * (gr.cy + (cy - gr.cy) * gs + gr.oy). Invert it for the window of rows that can reach the screen, with room for a swell and a push.
+    const slack = this.cellH * 2.5 * gr.scale * s * k + 140;
+    const lo = -slack;
+    const hi = viewH + slack;
+    const ks = k * s;
+    const cyOf = (screenY: number): number => gr.cy + ((screenY - wy) / ks - gr.cy - gr.oy) / gr.scale;
+    const cyLo = cyOf(lo);
+    const cyHi = cyOf(hi);
+    const ys = this.orderCy;
+    let a = 0;
+    let b = n;
+    while (a < b) {
+      const m = (a + b) >> 1;
+      if (ys[m]! < cyLo) a = m + 1;
+      else b = m;
+    }
+    for (let q = a; q < n && ys[q]! <= cyHi; q++) {
+      const i = this.order[q]!;
+      this.mark[i] = no;
+      cand.push(i);
+    }
+    for (const i of this.onNow) if (this.mark[i] !== no && i < n) cand.push(i);
   }
 }
 

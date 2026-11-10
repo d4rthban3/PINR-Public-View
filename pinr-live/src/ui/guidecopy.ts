@@ -1,6 +1,6 @@
 /**
  *
- * HUB-COPY-DRAFT-2026-10-14.md with three changes. Plain sections in one list: to move, cut or add a section, edit this
+ *
  * list only; the page draws whatever is here, in this order. Public wording follows PINR-HQ.md section 5 (no promises,
  *
  */
@@ -21,100 +21,54 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     title: "Where everything is",
     blocks: [
-      {
-        kind: "p",
-        lead: "Discover",
-        text: "is the search page and the market pulse: Trending, Top Movers, Fresh Launches and Token health lists, each card showing the coin, its market cap and all-time high, a small chart, and its token health with its coverage.",
-      },
-      { kind: "p", lead: "PINR", text: "is the home page: every coin PINR has read as a tile, biggest and most active first, so you see what the scanner is looking at." },
-      {
-        kind: "p",
-        lead: "PINRbot DeepScan",
-        text: "is one page per coin: the live chart on top, then the dossier below it: the token health, the recent trades, the checks, the facts, the written read, the coin's own links and what the posts about it say.",
-      },
-      { kind: "p", lead: "Wallet / Profile", text: "reads a wallet's public holdings. It cannot sign, send or approve anything." },
-      { kind: "p", lead: "PvP Arena", text: "sits above PINR: every version of a contested coin side by side, the leader first." },
-      { kind: "p", text: "PINR is the centre of the map. The compass in the centre of the footer opens the whole map. The PINR GUIDE button in the centre of the header opens this guide or the Whitepaper. The footer takes you to the main pages." },
+      { kind: "p", lead: "PINR", text: "is the home page: live coins as tiles, each with its picture, a small price line and its Token health. Pick a launchpad and one of its lists at the top." },
+      { kind: "p", lead: "Discover", text: "is search. Type a ticker, a name, a contract address or a link, or browse the launchpads' lists." },
+      { kind: "p", lead: "DeepScan", text: "is one coin's full page. Tap any coin to open it: chart, trades, the paper trail, checks, the pool's history, PINRai's reading and links." },
+      { kind: "p", lead: "PvP Arena", text: "shows competing versions of the same coin side by side." },
+      { kind: "p", lead: "Wallet", text: "looks up a wallet's public activity. It is read-only: PINR never asks you to connect, sign or send." },
+      { kind: "p", lead: "The map:", text: "the compass at the bottom zooms out to every room at once." },
     ],
   },
   {
-    title: "Why the site is laid out this way",
+    title: "Why it is laid out this way",
     blocks: [
-      {
-        kind: "p",
-        text: "Every page answers one question. PINR: what is moving. Discover: where is the coin I am looking for. DeepScan: what is the evidence for this one coin. Wallet: what do I hold. Everything starts at a coin, and every figure on the way carries where it came from and when it was read, so you can check it yourself instead of trusting a label.",
-      },
+      { kind: "p", text: "New coins move in seconds. The tiles put the picture, the price line and the evidence in the same place, so the facts are there at the moment you look, not three clicks away." },
     ],
   },
   {
-    title: "What token health is, and is not",
+    title: "What Token health is, and is not",
     blocks: [
-      {
-        kind: "p",
-        text: "Token health is PINR's reading of the evidence its checks found, from 1 to 99: a reading, not a verdict. Beside every reading is its **coverage**: how much of the picture was actually read. A reading with low coverage is an early, partial look. A high reading means \"no bad pattern found\". It does not say the coin is good, and it does not say what the price will do. When PINR has not read something, the page says \"not read\" and the reason. It never fills a gap with a guess, and a dash means \"not measured\".",
-      },
+      { kind: "p", text: "Token health is a reading of what PINR's checks found, shown with its coverage: how much was actually read. A low-coverage reading is early and says so. It is not a verdict: it does not say a coin is good, and it says nothing about price." },
     ],
   },
   {
-    title: "How PINR scans",
+    title: "How to read a coin",
     blocks: [
-      {
-        kind: "p",
-        text: "New launches are watched as they appear. A coin gets its token health reading on its own; the busiest coins are read first, so the list you see is led by what the market is paying attention to. A first reading is often chain-only and early, and it is read again as more can be read. Social posts are read separately: what a post claims is set beside what the chain shows, the lines are shown to you, and they never change a token health reading.",
-      },
+      { kind: "li", lead: "●", text: "observed on chain, with the transaction to open." },
+      { kind: "li", lead: "○", text: "reported somewhere else (an X post, a launchpad's page, someone's label), with where it was said." },
+      { kind: "li", lead: "not checked yet / not read yet / —:", text: "PINR has not read it. A blank never means \"nothing there\"." },
+      { kind: "li", lead: "Copy tag:", text: "this coin copies an earlier one. Copies live in the PvP Arena; only a battle's leading version stays on the lists." },
+      { kind: "li", lead: "Serial launcher tag:", text: "the creator has launched many coins. The coin still shows like any other." },
+      { kind: "li", text: "X findings say who read them: **GrokBot (X search)** or **Cursor (X, browser)**." },
     ],
   },
   {
-    title: "The data, one kind at a time",
+    title: "The lists",
     blocks: [
-      {
-        kind: "li",
-        lead: "Chain facts:",
-        text: "who created the coin, who paid for the launch, how many coins that wallet launched before, the pool and what it holds. Source: the public Solana chain, with a link to the explorer for each figure.",
-      },
-      { kind: "li", lead: "Launchpad facts:", text: "the coin's own record on its launchpad (its name, picture, links, market cap, all-time high). Source: the launchpad." },
-      { kind: "li", lead: "Market figures:", text: "price, liquidity, volume, pair. Source: the market data service named on each figure, with the time it was read." },
-      { kind: "li", lead: "Social lines:", text: "what the coin's linked posts say, shown with a link to the post, never part of token health." },
-      { kind: "p", text: "Every figure shows its source, how long ago it was read, and where to look. If a figure has no source, it says \"no source\" and is not used." },
+      { kind: "p", text: "The lists follow each launchpad's own lists and names. Where a launchpad's list cannot be read, PINR builds its own and labels it **PINR's list**, with how it is ordered." },
+      { kind: "p", text: "Some coins leave the lists, and their contract address still finds them in search: a coin with no trade for a day (its next trade brings it back), a copy that is not leading its battle (it is in the Arena), and a coin launched with clear bot patterns (with the tag that says why)." },
     ],
   },
   {
-    title: "What PINR does for each kind of trader",
+    title: "What PINR does for you",
     blocks: [
-      {
-        kind: "p",
-        lead: "New to this:",
-        text: "start on PINR or Discover, tap a coin, read the token health with its coverage first, then scroll the dossier from the top. The plain words (Strong, Fair, Weak, Clear, Not read) are there so you do not need to know what a check does.",
-      },
-      {
-        kind: "p",
-        lead: "Everyday trader:",
-        text: "use Fresh Launches and Top Movers to find coins fast, and read the checks and the recent trades before you decide anything. Compare the market cap with the all-time high.",
-      },
-      {
-        kind: "p",
-        lead: "Experienced:",
-        text: "the chart has timeframes, indicators and drawing tools, and every dossier figure links to its source so you can verify it. Use the facts list for the launcher's history.",
-      },
-      {
-        kind: "p",
-        lead: "Large holders:",
-        text: "watch who launched the coin, how long it has traded and how much liquidity sits behind it, and look at the top-holder check once it is read. A coin with low coverage tells you what has not been looked at yet.",
-      },
-      {
-        kind: "p",
-        lead: "Funds and desks:",
-        text: "the whole site is a research tool built on sourced, timestamped readings. Nothing on it is advice or a recommendation, and every number with a source line can be traced to its source.",
-      },
+      { kind: "p", text: "It reads every free public source for a coin, keeps it as a paper trail with links, checks every new coin for copies and relaunches before anything else, and says what it observed in plain words. PINRai adds a reading of what the developer appears to intend, in fixed sentences with their receipts." },
     ],
   },
   {
     title: "What PINR does not do",
     blocks: [
-      {
-        kind: "p",
-        text: "It does not tell you what to buy or sell. It does not predict price. It does not move your wallet. It shows what was read, from where, and when, and it says plainly what it could not read.",
-      },
+      { kind: "p", text: "PINR does not give financial advice, predict prices, rank coins as buys, hold your money or touch your wallet. It describes what was observed; what you do with it is your call." },
     ],
   },
 ];
@@ -124,26 +78,9 @@ export const GUIDE_SECTIONS: GuideSection[] = [
  * for the day the switch is turned on; this is the wording used while it is off. It is NEW public copy (it only removes claims that would be false and
  *
  */
-const HUB_TITLES_DROPPED = new Set(["What token health is, and is not", "How PINR scans"]);
+const HUB_TITLES_DROPPED = new Set(["What Token health is, and is not"]);
 const HUB_BLOCKS: Record<string, { lead?: string; text: string }> = {
-  Discover: {
-    lead: "Discover",
-    text: "is the search page and the market pulse: Trending, Top Movers and Fresh Launches lists, each card showing the coin, its market cap and all-time high, a small chart and its trade ribbon.",
-  },
-  PINR: { lead: "PINR", text: "is the home page: every coin the scanner is looking at as a tile, biggest and most active first, so you see what the scanner is looking at." },
-  "Social lines:": { lead: "Social lines:", text: "what the coin's linked posts say, shown with a link to the post." },
-  "PINRbot DeepScan": {
-    lead: "DeepScan",
-    text: "is one page per coin: a chart on top with links to full charts elsewhere, then the key stats, the recent trades, the checks, the facts, the written read, the coin's own links and what the posts about it say.",
-  },
-  "New to this:": {
-    lead: "New to this:",
-    text: "start on PINR or Discover, tap a coin, then scroll the page from the top. The plain words (observed, not checked yet, worth a closer look) are there so you do not need to know what a check does.",
-  },
-  "Large holders:": {
-    lead: "Large holders:",
-    text: "watch who launched the coin, how long it has traded and how much liquidity sits behind it, and look at the top-holder check once it is read. A check that says \"not checked yet\" tells you what has not been looked at yet.",
-  },
+  PINR: { lead: "PINR", text: "is the home page: live coins as tiles, each with its picture and a small price line. Pick a launchpad and one of its lists at the top." },
 };
 
 /** The guide's sections as the site shows them now: the approved text, or the hidden-score wording. */

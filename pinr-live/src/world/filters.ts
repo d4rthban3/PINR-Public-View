@@ -119,18 +119,18 @@ function byRank(ids: number[]): Ranked[] {
 
 /**
  * What the user can take out of the PINR page and Discover. A copy (VAMP) gets a tile that says VAMP, so by default everything shows;
- * these switches remove the rubbish: copies (VAMPs and possible copies), bots and rugs (proven BOT/RUG or HONEYPOT), and serial launchers.
+ * these switches remove copies (VAMPs and possible copies) and bots and rugs (proven BOT/RUG or HONEYPOT). Serial launchers always show
+ *
  */
 export interface Hides {
   vamp: boolean;
   bots: boolean;
-  serial: boolean;
 }
 const HIDE_KEY = "pinr.hide";
-let hides: Hides = { vamp: false, bots: false, serial: false };
+let hides: Hides = { vamp: false, bots: false };
 try {
   const raw = JSON.parse(localStorage.getItem(HIDE_KEY) ?? "null") as Partial<Hides> | null;
-  if (raw && typeof raw === "object") hides = { vamp: raw.vamp === true, bots: raw.bots === true, serial: raw.serial === true };
+  if (raw && typeof raw === "object") hides = { vamp: raw.vamp === true, bots: raw.bots === true };
 } catch {
   /* no storage: nothing is hidden */
 }
@@ -145,25 +145,8 @@ export function setHides(h: Hides): void {
 }
 /**
  *
- * battle". On the PINR page a coin with the Copy tag shows only while it leads its Arena battle (the Arena's own order), unless this person
- * switched "Show copies" on (off by default, kept in this browser). Discover and search are not changed.
+ *
  */
-const SHOW_COPIES_KEY = "pinr.showCopies";
-let showCopies = false;
-try {
-  showCopies = localStorage.getItem(SHOW_COPIES_KEY) === "1";
-} catch {
-  /* no storage: off */
-}
-export const getShowCopies = (): boolean => showCopies;
-export function setShowCopies(on: boolean): void {
-  showCopies = on;
-  try {
-    localStorage.setItem(SHOW_COPIES_KEY, on ? "1" : "0");
-  } catch {
-    /* the choice lasts until the page closes */
-  }
-}
 let copyWinners: ReadonlySet<string> = new Set();
 /** The coins leading their Arena battles now (lower-case addresses). Returns true when the set changed, so the PINR page can be laid out again. */
 export function setCopyWinners(winners: Iterable<string>): boolean {
@@ -186,12 +169,12 @@ export function arenaAnswerTaken(lastBattles: number, battles: number): { taken:
 export type ListScope = "pinr" | "discover";
 
 /** True when the user's switches take this token out. */
-export function isHidden(it: Item, h: Hides = hides, scope: ListScope = "pinr"): boolean {
+export function isHidden(it: Item, h: Hides = hides, _scope: ListScope = "pinr"): boolean {
   if (it.quiet === true) return true;
-  if (scope === "pinr" && !showCopies && it.tags?.includes("vamp") && !copyWinners.has((it.address ?? "").toLowerCase())) return true;
+  //
+  if (it.tags?.includes("vamp") && !copyWinners.has((it.address ?? "").toLowerCase())) return true;
   if (h.vamp && (it.flagKind === "VAMP" || it.possibleCopy !== undefined)) return true;
   if (h.bots && (it.flagKind === "BOT/RUG" || it.flagKind === "HONEYPOT")) return true;
-  if (h.serial && it.serial === true) return true;
   return false;
 }
 

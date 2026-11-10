@@ -68,6 +68,15 @@ function rec(v: EvidenceRow["value"]): Record<string, string | number | boolean>
   return typeof v === "object" && v !== null ? v : {};
 }
 
+/**
+ * Release checklist line 7 (nothing fake, missing says so): a source's words can carry a raw "null", "undefined" or "NaN" where a value was not there (the GrokBot account line
+ * read "verified as shown: none: null"). Such a piece is never shown as it is: it reads "not checked yet". A word is only taken for a raw null when it stands alone between
+ * the separators (start, ": ", " · ", ", " and the end), so a coin or a name that merely contains the letters is left as it is.
+ */
+export function noRawNull(text: string): string {
+  return text.replace(/(^|:\s+|\s·\s|,\s+)(null|undefined|NaN)(?=$|\s*:|\s·|,)/gi, (_m, pre: string) => `${pre}not checked yet`);
+}
+
 /** Which group a row belongs to and how it reads. Unknown rows still show (under Links), in the words the source gave. */
 export function describe(r: EvidenceRow): { group: GroupId; text: string } {
   const w = r.what;
@@ -187,7 +196,7 @@ export function orbitGroups(ev: Evidence | null, nowMs: number): OrbitGroup[] {
     const read = scoredAgo(r.readMs, nowMs);
     const at = scoredAgo(r.atMs, nowMs);
     groups.find((g) => g.id === d.group)!.facts.push({
-      text: d.text,
+      text: noRawNull(d.text),
       onchain: r.onchain,
       readText: read ? `read ${read}` : null,
       happenedText: at ? `happened ${at}` : null,
@@ -275,9 +284,14 @@ export function gateView(g: Gate | undefined, nowMs: number): GateView | null {
   // A line the items did not carry (the file's own words) still shows once.
   const seen = new Set(lines.map((l) => l.words));
   for (const w of g.words) if (!seen.has(w) && g.status !== "not read yet" && lines.length) lines.push({ words: w, when: null, links: [] });
+  // Release checklist line 7: a raw null in the file's words or in a link's label reads "not checked yet", like the Evidence rows.
+  for (const l of lines) {
+    l.words = noRawNull(l.words);
+    for (const k of l.links) k.label = noRawNull(k.label);
+  }
   const others = (g.creator?.otherCoins ?? []).map((c) => coinLink(c, nowMs));
   const read = scoredAgo(g.readMs, nowMs);
-  return { headline, lines, others, creatorLink: g.creator?.link ?? null, readText: read ? `read ${read}${g.source ? ` · ${g.source}` : ""}` : g.source ? `source: ${g.source}` : null };
+  return { headline: noRawNull(headline), lines, others, creatorLink: g.creator?.link ?? null, readText: read ? `read ${read}${g.source ? ` · ${g.source}` : ""}` : g.source ? `source: ${g.source}` : null };
 }
 
 
@@ -305,11 +319,11 @@ const plainText = (v: string | number | boolean | null): string => (v === null ?
 export function pinraiView(p: Pinrai | undefined, nowMs: number): PinraiView | null {
   if (!p) return null;
   const lines: PinraiLine[] = p.items.map((it) => ({
-    words: it.words,
+    words: noRawNull(it.words),
     reviewed: it.reviewed,
     receipts: it.receipts.map((r) => {
       const v = plainText(r.value);
-      const text = [r.source, v].filter(Boolean).join(": ") || "see the source";
+      const text = noRawNull([r.source, v].filter(Boolean).join(": ") || "see the source");
       return { text, mark: r.onchain ? "●" : "○", when: scoredAgo(r.asOfMs, nowMs), href: r.link };
     }),
   }));
@@ -339,7 +353,7 @@ export function grokbotView(g: Grokbot | undefined, nowMs: number): GrokbotView 
     const v = plainText(r.value);
     return {
       kind: GROK_KINDS[r.kind] ?? r.kind,
-      text: v ? `${r.what}: ${v}` : r.what,
+      text: noRawNull(v ? `${r.what}: ${v}` : r.what),
       when: scoredAgo(r.asOfMs, nowMs),
       href: r.link ?? "",
       note: r.removed ? "the post was removed when opened" : r.ownAccount ? "read from the account's own page" : null,

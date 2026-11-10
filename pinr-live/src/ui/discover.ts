@@ -10,6 +10,7 @@ import { pictureOf } from "../world/cards";
 import { easeLean, LEAN_ROW, leanShift, leanWords, lastTradeText, makeFlow, lineFromTrades, realOf, ribbonMode, ribbonValue, stepReal, type Flow, type RibbonMode } from "../world/flow";
 import { createBadge, type Badge } from "./badge";
 import { flagWord } from "../world/copynote";
+import { ribbonLegendEl } from "../world/ribbonlegend";
 import { avatarChar, liveImportance, SIM, statusLook, type Item } from "../world/model";
 import { scoreColor } from "../world/scorecolor";
 import { SCORE_NOTICE, makeAdviceTag, makeByCount, makeScoreTag } from "./scorenotice";
@@ -359,7 +360,7 @@ export function createDiscover(opts: DiscoverOptions): Discover {
   list.append(empty);
 
   const body = el("section", "dbody");
-  body.append(pulse, tabsEl, listsEl, bar, list);
+  body.append(pulse, tabsEl, listsEl, bar, ribbonLegendEl("dnote dlegend"), list);
   scroller.append(hero, searchWrap, body);
   frame.append(scroller);
   root.append(frame);

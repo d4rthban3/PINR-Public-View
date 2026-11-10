@@ -8,6 +8,7 @@ import { BG_MOVERS } from "./bgmovers.gen";
  * The moving parts are the art's own: the ring turns once in 208 s, the counter ring back in 272 s, the core and logo breathe in 35.2 s, the pulse rings, the twinkling dots and the
  * particles along the two tracks. The flow dashes along the tracks, which crept 3.6 units a second, are drawn still.
  */
+export const BG_SPEED = 0.5;
 export type BgLook = "dark" | "light";
 export interface BgLayers {
   /** Show this look's background; `still` shows the single still picture instead (reduced motion, or the background switched off). */
@@ -50,6 +51,7 @@ const pct = (v: number): string => `${((v / 1200) * 100).toFixed(4)}%`;
 export function createBgLayers(root: HTMLElement): BgLayers {
   let key = "";
   let start: number | null = null;
+  root.style.setProperty("--bgslow", String(1 / BG_SPEED)); // the layers' own CSS durations are multiplied by this (style.css)
   const stage = el("div", "bgstage");
   root.replaceChildren(stage);
   const fit = (): void => {
@@ -68,7 +70,7 @@ export function createBgLayers(root: HTMLElement): BgLayers {
     // the pulse rings: a thin ring that grows and fades (30.4 s)
     for (const p of M.pulse) {
       const d = el("div", "bgl pulse");
-      d.style.cssText = `width:${pct(p.r * 2)};height:${pct(p.r * 2)};left:${pct(600 - p.r)};top:${pct(600 - p.r)};border:calc(var(--bgk) * ${p.width}) solid ${p.stroke};animation-delay:${p.delay}s`;
+      d.style.cssText = `width:${pct(p.r * 2)};height:${pct(p.r * 2)};left:${pct(600 - p.r)};top:${pct(600 - p.r)};border:calc(var(--bgk) * ${p.width}) solid ${p.stroke};animation-delay:${p.delay / BG_SPEED}s`;
       stage.append(d);
     }
     stage.append(img(`${A}${look}-ring-slow.svg`, "bgl ring slow"), img(`${A}${look}-ring-counter.svg`, "bgl ring counter"));
@@ -76,7 +78,7 @@ export function createBgLayers(root: HTMLElement): BgLayers {
     tw.style.opacity = String(M.twinkle.opacity);
     for (const t of M.twinkle.dots) {
       const d = el("i", "tw");
-      d.style.cssText = `width:${pct(t.r * 2)};height:${pct(t.r * 2)};left:${pct(t.cx - t.r)};top:${pct(t.cy - t.r)};background:${M.twinkle.fill};animation-delay:${t.delay}s`;
+      d.style.cssText = `width:${pct(t.r * 2)};height:${pct(t.r * 2)};left:${pct(t.cx - t.r)};top:${pct(t.cy - t.r)};background:${M.twinkle.fill};animation-delay:${t.delay / BG_SPEED}s`;
       tw.append(d);
     }
     stage.append(tw);
@@ -89,7 +91,7 @@ export function createBgLayers(root: HTMLElement): BgLayers {
       const r = p.r;
       const pts = samplePath(p.path, STEPS);
       css += `@keyframes bgl-travel-${look}-${n}{${pts.map((q, i) => `${((i / STEPS) * 100).toFixed(3)}%{transform:translate(${q.x.toFixed(2)}px,${q.y.toFixed(2)}px)}`).join("")}}`;
-      d.style.cssText = `width:${r * 8}px;height:${r * 8}px;margin:${-r * 4}px 0 0 ${-r * 4}px;animation:bgl-travel-${look}-${n} ${p.dur}s linear ${p.begin}s infinite;background:radial-gradient(circle,${M.particles.fill} 0 22%,${M.particles.fill}40 28%,${M.particles.fill}00 46%)`;
+      d.style.cssText = `width:${r * 8}px;height:${r * 8}px;margin:${-r * 4}px 0 0 ${-r * 4}px;animation:bgl-travel-${look}-${n} ${p.dur / BG_SPEED}s linear ${p.begin / BG_SPEED}s infinite;background:radial-gradient(circle,${M.particles.fill} 0 22%,${M.particles.fill}40 28%,${M.particles.fill}00 46%)`;
       pa.append(d);
     });
     sheet.textContent = css;

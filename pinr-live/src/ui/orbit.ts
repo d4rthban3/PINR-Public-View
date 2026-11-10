@@ -205,7 +205,7 @@ export function createOrbit(opts: OrbitOptions): Orbit {
     if (v.readText) ai.append(el("p", "orbgateread", v.readText));
   }
 
-  /** GrokBot (X, browser): its checked findings, each ○ reported, with the link that opened and the time. Hidden when the file has none. */
+  /** GrokBot (X search): its checked findings, each ○ reported, with the link that opened and the time. Hidden when the file has none. */
   function drawGrokbot(ev: Evidence | null): void {
     const v = grokbotView(ev?.grokbot, Date.now());
     grok.hidden = v === null;

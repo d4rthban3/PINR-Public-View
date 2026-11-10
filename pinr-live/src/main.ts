@@ -26,11 +26,15 @@ import { allowedCols, clampCols, defaultCols, fitScale, gridWidth, PHONE_WIDTH, 
 import { CARD_W } from "./world/cards";
 /** A phone tile's height to its width, as in the iPhone and Android apps. */
 const PHONE_TILE_TALL = 1.52;
+const COMPUTER_TILE_TALL = 1.313;
+//
 import { createHeader } from "./ui/header";
-import { createBgLayers } from "./ui/bglayers";
+import { BG_SPEED, createBgLayers } from "./ui/bglayers";
+import { createArtView } from "./ui/artview";
 import { LP_ROW_BOTTOM, LP_ROW_BOTTOM_PHONE } from "./ui/lppills";
 import { groupCounts } from "./ui/pagestatement";
 import { createPageEvents } from "./ui/pageevents";
+import { ribbonLegendEl } from "./world/ribbonlegend";
 import { readGroups, totalsToShow, totalsUrl, type RawGroups } from "./world/grouptotals";
 import type { GroupCounts } from "./ui/grouppills";
 import { GROUP_ROW, GROUP_ROW_PHONE, GROUPS_IN_ROW_FROM } from "./ui/grouppills";
@@ -69,7 +73,7 @@ import {
   type Frame,
   type PageId,
 } from "./world/sitemap";
-import { makeStore, NEW_LAUNCH_MIN, SIM, THIN_BELOW, type Feed, type FlagKind, type Item } from "./world/model";
+import { makeStore, SIM, type Feed, type Item } from "./world/model";
 import type { RangeId } from "./world/format";
 import type { CandlesResult, ChartResult } from "../server/market";
 import type { Dossier } from "../server/dossier";
@@ -271,11 +275,21 @@ const savePref = (key: string, on: boolean): void => {
   }
 };
 /*
- *  The animated version (the layers, the creeping SVG and the phone video) stays in the code, unused: set this to false to bring it back. */
-const BG_STILL = true;
+ */
+const BG_STILL = false;
 let bgEnabled = readPref("pinr.bg");
 let motionEnabled = readPref("pinr.motion");
+let bgPageNow: string = "pinr";
+let bgMapNow = false; // both are kept up to date by the frame loop (the page and the map are declared further down)
+const bgPausedNow = (): boolean => !bgMapNow && (bgPageNow === "pinr" || bgPageNow === "discover");
+let bgPauseSeen = false;
 function syncBgPlayback(): void {
+  const paused = bgPausedNow();
+  bgPauseSeen = paused;
+  if (bgSvg) {
+    if (paused) bgSvg.dataset.pause = "1";
+    else delete bgSvg.dataset.pause;
+  }
   if (!phoneBg.matches || lightBg()) {
     // Desktop width (and light mode at every width): the SVG teaser animates by itself; with the background switched off or motion reduced, the still frame stands instead.
     const still = BG_STILL || reduceMotion.matches || !bgEnabled;
@@ -290,10 +304,13 @@ function syncBgPlayback(): void {
     if (bgVid.currentTime > 0) bgVid.currentTime = 0;
     return;
   }
-  if (document.hidden || reduceMotion.matches || !bgEnabled || off.has("video")) bgVid.pause();
-  else void bgVid.play().catch(() => {
-    /* Autoplay refused (e.g. iOS Low Power Mode): the poster frame simply stays up. */
-  });
+  if (paused || document.hidden || reduceMotion.matches || !bgEnabled || off.has("video")) bgVid.pause();
+  else {
+    bgVid.playbackRate = BG_SPEED;
+    void bgVid.play().catch(() => {
+      /* Autoplay refused (e.g. iOS Low Power Mode): the poster frame simply stays up. */
+    });
+  }
 }
 document.addEventListener("visibilitychange", syncBgPlayback);
 reduceMotion.addEventListener("change", syncBgPlayback);
@@ -333,11 +350,6 @@ const pagesRoot = document.getElementById("pages")!;
 const pages = createPages(pagesRoot);
 
 /** One row per proven label that any token carries (the engine's labels differ from the simulation's). */
-function flaggedRows(): { label: string; value: string; tone: "warn" }[] {
-  const kinds: FlagKind[] = ["BOT", "RUG", "VAMP", "BOT/RUG", "MAYHEM", "HONEYPOT"];
-  const rows = kinds.map((k) => ({ label: `Label observed: ${k}`, value: String(store.items.filter((i) => i.flagKind === k).length), tone: "warn" as const })).filter((r) => r.value !== "0");
-  return rows.length ? rows : [{ label: "Labels observed", value: "0", tone: "warn" as const }];
-}
 /** Surges (event lines) seen in the last 60 seconds: counted from the tiles' own event counters. */
 const eventLog: { at: number; n: number }[] = [];
 let eventTotal = -1;
@@ -355,13 +367,12 @@ function streamsState(): { text: string; on: boolean } {
   if (!motionEnabled) return { text: "OFF: switched off in Settings", on: false };
   const flowing = store.items.filter((i) => i.hasFlow).length;
   if (flowing === 0) return { text: "NONE: this data has no trades yet", on: false };
-  return { text: `ON for ${flowing.toLocaleString("en-US")} coins`, on: true };
+  return { text: "ON", on: true };
 }
 const streamsRow = (): { label: string; value: string; tone?: "warn" } => {
   const s = streamsState();
   return { label: "Buy/sell streaks", value: s.text, tone: s.on ? undefined : "warn" };
 };
-const count = (f: (i: (typeof store.items)[number]) => boolean): number => store.items.filter(f).length;
 function priceHistoryLine(): string {
   const l = liveFeed.link().lines;
   if (!l || !l.rows) return "—";
@@ -436,28 +447,20 @@ const header = createHeader({
   pipeline: () => [
     //
     { label: "Coins tracked", value: liveFeed.link().files ? liveFeed.link().files.toLocaleString("en-US") : "—" },
-    { label: "Being read now", value: String(count((i) => i.status === "checking")) },
-    { label: "Token health read", value: String(count((i) => i.status === "ok" && i.coverage > 0)), tone: "live" },
-    { label: "Launchpad coins, no health reading yet", value: String(count((i) => i.status === "ok" && i.coverage <= 0 && i.note === null)) },
-    { label: "Readings to ask again", value: String(count((i) => i.status === "error")) },
-    ...flaggedRows(),
+    //
   ],
   diagnostics: () => {
-    const loaded = store.items.filter((i) => i.coverage > 0);
-    const avg = loaded.length ? Math.round(loaded.reduce((a, i) => a + i.coverage, 0) / loaded.length) : null;
     return [
       { label: "Data source", value: dataView().name, tone: dataView().warn ? ("warn" as const) : undefined },
       ...(liveFeed
         ? [
+            //
+            { label: "Coins tracked", value: liveFeed.link().files ? liveFeed.link().files.toLocaleString("en-US") : "—" },
             { label: "Files not read", value: String(liveFeed.link().fileProblems) },
             // walk item 5: the served coins that draw a price line, by where the line came from (the server's count, not the coins this page holds)
             { label: "Price history", value: priceHistoryLine() },
           ]
         : []),
-      { label: "Average coverage", value: avg === null ? "—" : `${avg}%` },
-      { label: "Thin coverage (under 55%)", value: String(count((i) => i.coverage > 0 && i.coverage < THIN_BELOW)) },
-      { label: "Nothing loaded (0%)", value: String(count((i) => i.coverage <= 0)) },
-      { label: "New launches (under 1h)", value: String(count((i) => i.ageMin < NEW_LAUNCH_MIN)) },
       { label: "Discover list age", value: `${Math.round(discover.ageSeconds())}s` },
       streamsRow(),
       { label: "Tokens skipped (unreadable)", value: String(store.skipped), tone: store.skipped === 0 ? undefined : ("warn" as const) },
@@ -919,6 +922,8 @@ const isOverlayPage = (id: PageId): boolean => id === "discover" || id === "deep
 
 /** Space kept free above the grid for the header and below it for the tab bar (measured on resize). */
 let bottomInset = 90;
+//
+let ribbonLegend: HTMLElement | null = null;
 let topInset = 80;
 
 /** Scroll limits come from the tiles now shown, so the view can never wander off into empty space. */
@@ -959,6 +964,7 @@ const trail = new NavTrail(window.history, {
   restore: restoreScreen,
   home: () => goTo("pinr", false, false),
 });
+const artView = createArtView(trail);
 navTrail.current = trail;
 window.addEventListener("popstate", (e) => trail.popped(e.state));
 
@@ -1151,7 +1157,7 @@ function layoutHome(): void {
   // 5 rows fill one screen at home (a 5 x 5 grid); the grid scrolls on down to the roster size. At phone width the tiles keep the apps'
   // shape instead (about 1.52 times as tall as wide, at 2, 3 or 4 across), so 2 across shows big tiles as in the apps, not wide strips.
   //
-  field.setCellHeight(view.w < PHONE_WIDTH ? PHONE_TILE_TALL * CARD_W : Math.max(24, (CARD_W * view.h) / view.w));
+  field.setCellHeight((view.w < PHONE_WIDTH ? PHONE_TILE_TALL : COMPUTER_TILE_TALL) * CARD_W);
   // Zoom locks onto the 5 x 5 view and goes no closer. The far limit is a placeholder for the site map:
   // it will be where all five pages are in view.
   // Page frames on the map. A frame is what one screen of a page covers.
@@ -1211,10 +1217,12 @@ function resize(): void {
   topInset = lpBottom + GAP * homeScale();
   //
   const tabTop = tabbar.top();
-  bottomInset = view.h - tabTop + 10;
+  const legendH = ribbonLegend && !ribbonLegend.hidden ? ribbonLegend.offsetHeight + 8 : 0;
+  bottomInset = view.h - tabTop + 10 + legendH;
   // The grid is cut cleanly at the header's and footer's edges.
   document.documentElement.style.setProperty("--clip-top", `${hb.bottom + 2}px`);
   document.documentElement.style.setProperty("--clip-bottom", `${view.h - tabTop + 2}px`);
+  document.documentElement.style.setProperty("--tile-clip-bottom", `${view.h - tabTop + 2 + legendH}px`);
   document.documentElement.style.setProperty("--vh", `${view.h}px`);
   layoutHome();
   //
@@ -1395,6 +1403,10 @@ stage.addEventListener("pointerleave", () => letGo());
 attachInput(stage, cam, () => view, () => {}, onZoomEnd, () => holding);
 const pageEvents = createPageEvents();
 document.body.append(pageEvents.el);
+//
+ribbonLegend = ribbonLegendEl("ribbonlegend");
+ribbonLegend.hidden = true;
+document.body.append(ribbonLegend);
 /** The tiles' inset changes (the group row appears): a page the visitor has not moved follows to its new home, a page they have scrolled keeps its place. */
 // True once the visitor has touched the page (a drag, a wheel turn): from then on the page keeps its scroll when the room above the tiles changes.
 let userMoved = false;
@@ -1448,6 +1460,11 @@ function shownGroupCounts(): GroupCounts {
 setInterval(() => {
   const on = current === "pinr" && !mapMode;
   if (!on && pageEvents.isOpen()) pageEvents.close();
+  if (ribbonLegend && ribbonLegend.hidden === on) {
+    ribbonLegend.hidden = !on;
+    sizedW = -1; // the band under the tiles appears or goes: the room is measured again
+    resize();
+  }
   if (on) {
     pageEvents.refresh(store.items.filter((it) => !isHidden(it) && (moderation.showMayhem || it.flagKind !== "MAYHEM") && !moderation.isHidden(it.address)));
     // The group row appears once it has counts: the tiles' inset grows by its height, so the room is measured again.
@@ -1591,7 +1608,7 @@ function frameBody(now: number): void {
     if (bgSvg) bgSvg.style.transform = bgT;
   }
   //
-  const bgRest = journey !== null || now - lastBgMove < 300 || current !== "pinr";
+  const bgRest = journey !== null || now - lastBgMove < 300;
   if (bgRest !== bgResting) {
     bgResting = bgRest;
     bgSvg?.classList.toggle("rest", bgRest);
@@ -1700,7 +1717,7 @@ function frameBody(now: number): void {
   field.paused = current !== "pinr" && !mapMode && journey === null && !cardFull.isOpen;
   field.frozen = holdFrames > 0;
   //
-  const bgPause = field.paused || document.hidden;
+  const bgPause = bgPausedNow() || document.hidden;
   if (bgPause !== bgPaused) {
     bgPaused = bgPause;
     bgEl.classList.toggle("paused", bgPause);
@@ -1726,6 +1743,10 @@ function frameBody(now: number): void {
   if (!journey) tabbar.setActive(current);
   tabbar.setCompass(current, atMacro());
   header.setBack(trail.canBack || (mapMode && !journey));
+  bgPageNow = current;
+  bgMapNow = mapMode;
+  if (bgPausedNow() !== bgPauseSeen) syncBgPlayback(); // the page changed between a paused page and a moving one
+  artView.sync(mapMode && !journey);
   //
   const mapOn = mapMode && !journey ? "1" : "";
   if (document.documentElement.dataset.map !== mapOn) document.documentElement.dataset.map = mapOn;

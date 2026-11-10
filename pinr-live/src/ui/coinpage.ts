@@ -205,13 +205,21 @@ export function periodText(a: { range: RangeId; ageMin: number; firstSec: number
 }
 
 /** "▲ $0.0123 (3.6%)" or "▼ $0.0123 (3.6%)": the arrow, the price change and the percent, without a plus sign. */
-export function changeText(c: { delta: number; pct: number; up: boolean }): string {
-  return `${c.up ? "▲" : "▼"} ${formatPrice(Math.abs(c.delta))} (${signedPct(Math.abs(c.pct)).replace("+", "")})`;
+export function changeText(c: { delta: number; pct: number; up: boolean }, fmt: (v: number) => string = formatPrice): string {
+  return `${c.up ? "▲" : "▼"} ${fmt(Math.abs(c.delta))} (${signedPct(Math.abs(c.pct)).replace("+", "")})`;
 }
 
 export function changePctOnly(t: string): string {
   const m = /^([▲▼]) .*\(([^()]+)\)$/.exec(t.trim());
   return m ? `${m[1]} ${m[2]}` : t;
+}
+
+/**
+ *
+ * coin's own market cap over its own price (the same quote pair). With either missing the factor is NaN: the chart shows price and says so.
+ */
+export function capFactor(mcap: number, priceUsd: number): number {
+  return Number.isFinite(mcap) && mcap > 0 && Number.isFinite(priceUsd) && priceUsd > 0 ? mcap / priceUsd : NaN;
 }
 
 /** The key stats under the chart: label and value, a dash for anything not known (missing stays missing). */
@@ -314,6 +322,23 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
     paint();
   });
   tabs.append(modeBtn);
+  //
+  let unit: "mcap" | "price" = "mcap";
+  const unitBtn = el("button", "cptab cpmode cpunit", "Price");
+  unitBtn.type = "button";
+  unitBtn.addEventListener("click", () => {
+    unit = unit === "mcap" ? "price" : "mcap";
+    fitted = "";
+    paint();
+  });
+  tabs.append(unitBtn);
+  /** The factor the chart's prices are multiplied by: the coin's supply when market cap is shown, else 1. */
+  const scale = (): number => {
+    const k = item ? capFactor(item.mcap, item.priceUsd) : NaN;
+    return unit === "mcap" && Number.isFinite(k) ? k : 1;
+  };
+  const capShown = (): boolean => unit === "mcap" && item !== null && Number.isFinite(capFactor(item.mcap, item.priceUsd));
+  const fmtV = (v: number): string => (capShown() ? money(v) : formatPrice(v));
   const caption = el("div", "cpcap");
   const quietNote = el("div", "cpquiet", "No trades in the last 24 hours.");
   quietNote.hidden = true;
@@ -394,14 +419,15 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
     setT(tickerEl, `${it.ticker !== "—" ? it.ticker : ""}${it.launchpad ? `${it.ticker !== "—" ? " · " : ""}${it.launchpad}` : ""}`);
     const ok = candles.length >= (range === "1S" ? 1 : 2);
     const at = scrub >= 0 && scrub < candles.length ? candles[scrub]! : null;
-    const price = at ? at[4] : candles.length ? candles[candles.length - 1]![4] : Number.isFinite(it.priceUsd) ? it.priceUsd : NaN;
-    setT(priceEl, formatPrice(price));
+    const S = scale();
+    const price = (at ? at[4] : candles.length ? candles[candles.length - 1]![4] : Number.isFinite(it.priceUsd) ? it.priceUsd : NaN) * S;
+    setT(priceEl, fmtV(price));
     let up = true;
     if (ok) {
-      const c = changeFrom(candles[0]![1], price);
+      const c = changeFrom(candles[0]![1] * S, price);
       if (c) {
         up = c.up;
-        setT(changeEl, changeText(c));
+        setT(changeEl, changeText(c, fmtV));
       } else setT(changeEl, "");
       setT(
         periodEl,
@@ -518,9 +544,9 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
         // The page scrolls under a finger: the chart only shows the crosshair (the scrub); its range is the tabs'.
         handleScroll: { mouseWheel: false, pressedMouseMove: false, horzTouchDrag: false, vertTouchDrag: false },
         handleScale: { mouseWheel: false, pinch: false, axisPressedMouseMove: false, axisDoubleClickReset: false },
-        localization: { priceFormatter: (v: number) => formatPrice(v), timeFormatter: (t: number) => candleTime(t, tickMode === "sec" ? 1 : tickMode === "time" ? 900 : 86_400) },
+        localization: { priceFormatter: (v: number) => fmtV(v), timeFormatter: (t: number) => candleTime(t, tickMode === "sec" ? 1 : tickMode === "time" ? 900 : 86_400) },
       });
-      const candle = chart.addSeries(lw.CandlestickSeries, { upColor: css("--live", "#d6ff3c"), downColor: css("--mandarin", "#ff8c1a"), borderVisible: false, wickUpColor: css("--live", "#d6ff3c"), wickDownColor: css("--mandarin", "#ff8c1a"), lastValueVisible: false, priceLineVisible: false, priceFormat: { type: "custom", formatter: (v: number) => formatPrice(v), minMove: 1e-12 } });
+      const candle = chart.addSeries(lw.CandlestickSeries, { upColor: css("--live", "#d6ff3c"), downColor: css("--mandarin", "#ff8c1a"), borderVisible: false, wickUpColor: css("--live", "#d6ff3c"), wickDownColor: css("--mandarin", "#ff8c1a"), lastValueVisible: false, priceLineVisible: false, priceFormat: { type: "custom", formatter: (v: number) => fmtV(v), minMove: 1e-12 } });
       const volume = chart.addSeries(lw.HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "", lastValueVisible: false, priceLineVisible: false });
       volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
       chart.subscribeCrosshairMove((p) => {
@@ -543,7 +569,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
         priceLineVisible: false,
         crosshairMarkerRadius: 5,
         lastPriceAnimation: pageShown ? lw.LastPriceAnimationMode.Continuous : lw.LastPriceAnimationMode.Disabled,
-        priceFormat: { type: "custom", formatter: (v: number) => formatPrice(v), minMove: 1e-12 },
+        priceFormat: { type: "custom", formatter: (v: number) => fmtV(v), minMove: 1e-12 },
         visible: false,
       });
       lwLineTypes = { curved: lw.LineType.Curved, steps: lw.LineType.WithSteps };
@@ -573,7 +599,12 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
 
   function paint(): void {
     // No candles from any source: the coin's own tracked or measured price line in the same chart, said plainly (never a made-up candle).
-    const fallback = lineFallback();
+    const S = scale();
+    const fallback = lineFallback()?.map((p) => ({ time: p.time, value: p.value * S })) ?? null;
+    const capKnown = item !== null && Number.isFinite(capFactor(item.mcap, item.priceUsd));
+    if (unitBtn.hidden !== !capKnown) unitBtn.hidden = !capKnown;
+    setT(unitBtn, unit === "mcap" ? "Price" : "MCap");
+    unitBtn.setAttribute("aria-label", unit === "mcap" ? "Show price" : "Show market cap");
     const ok = candles.length >= (range === "1S" ? 1 : 2) || fallback !== null; // one second's trade is a chart too (a single point)
     plot.style.visibility = ok ? "visible" : "hidden";
     const oneSec = range === "1S";
@@ -607,8 +638,9 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
       }
     }
     if (tv && asLine) {
-      const pts = haveCandles ? (oneSec ? heldPerSecond(candles, Math.floor(Date.now() / 1000)) : lineFromOpen(candles, bucket)) : fallback!;
-      const first = haveCandles ? candles[0]![1] : pts[0]!.value;
+      const pts0 = haveCandles ? (oneSec ? heldPerSecond(candles, Math.floor(Date.now() / 1000)) : lineFromOpen(candles, bucket)) : fallback!;
+      const pts = haveCandles && S !== 1 ? pts0.map((p) => ({ ...p, value: p.value * S })) : pts0;
+      const first = haveCandles ? candles[0]![1] * S : pts[0]!.value;
       const dirUp = pts[pts.length - 1]!.value >= first;
       const col = dirUp ? lineColor() : css("--mandarin", "#ff8c1a");
       const [r, g, b] = rgbOf(col);
@@ -629,7 +661,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
       tv.candle.applyOptions({ upColor: up, downColor: down, wickUpColor: up, wickDownColor: down });
       // On the 1-second chart a second with no trade is an empty slot (whitespace), never a bar.
       const slots = oneSec ? withGaps(candles) : candles.map((c) => c as Candle | number);
-      tv.candle.setData(slots.map((c) => (typeof c === "number" ? { time: c as UTCTimestamp } : { time: c[0] as UTCTimestamp, open: c[1], high: c[2], low: c[3], close: c[4] })));
+      tv.candle.setData(slots.map((c) => (typeof c === "number" ? { time: c as UTCTimestamp } : { time: c[0] as UTCTimestamp, open: c[1] * S, high: c[2] * S, low: c[3] * S, close: c[4] * S })));
       tv.volume.setData(slots.map((c) => (typeof c === "number" ? { time: c as UTCTimestamp } : { time: c[0] as UTCTimestamp, value: c[5], color: c[4] >= c[1] ? up + "66" : down + "66" })));
       if (fitted !== range + ":" + (item?.id ?? "") || oneSec) {
         tv.chart.timeScale().fitContent();
@@ -637,7 +669,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
       }
     }
     if (tv) {
-      const pts: [number, number][] = asLine ? (haveCandles ? candles.map((c) => [c[0], c[4]]) : fallback!.map((p) => [p.time as number, p.value])) : asCandles ? candles.map((c) => [c[0], c[4]]) : [];
+      const pts: [number, number][] = asLine ? (haveCandles ? candles.map((c) => [c[0], c[4] * S]) : fallback!.map((p) => [p.time as number, p.value])) : asCandles ? candles.map((c) => [c[0], c[4] * S]) : [];
       paintMarkers(asLine ? "line" : asCandles ? "candles" : null, pts);
     }
     // One message, from what is actually on the chart: a drawn line or candles never sit beside "Chart busy".
@@ -661,7 +693,10 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
                 : "No chart yet.";
     setT(status, msg);
     status.classList.toggle("hide", msg === "");
-    setT(caption, candles.length >= 2 && source ? `Chart: ${source === "PINR tape" ? "Pump.fun" : source} · ${view === "candles" ? (oneSec ? "candles for each second with a trade" : "candles with volume") : oneSec ? "price line, a quiet second holds the last price" : "price line"}` : fallback ? `Chart: ${item?.priceSource || "PINR"} price line · no candles are available for this coin yet` : "");
+    //
+    const what = S !== 1 ? "market cap" : "price";
+    const capNote = unit === "mcap" && !capKnown ? " · market cap not known" : "";
+    setT(caption, candles.length >= 2 && source ? `Chart: ${source === "PINR tape" ? "Pump.fun" : source} · ${view === "candles" ? (oneSec ? "candles for each second with a trade" : "candles with volume") : oneSec ? `${what} line, a quiet second holds the last price` : `${what} line`}${capNote}` : fallback ? `Chart: ${item?.priceSource || "PINR"} ${what} line · no candles are available for this coin yet${capNote}` : "");
     paintHead();
   }
 
@@ -673,7 +708,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
     const span = times.length > 1 ? times[times.length - 1]! - times[0]! : 0;
     const when = (t: number): string => (span <= 36 * 3600 ? tickLabel(t, step < 60 ? "sec" : "time") : candleTime(t, 60));
     const marks = on ? eventMarkers(events, times, step, when) : [];
-    const key = `${on}|${document.documentElement.dataset.theme ?? ""}|${marks.map((m) => `${m.time}:${m.text}`).join(",")}`;
+    const key = `${on}|${scale()}|${document.documentElement.dataset.theme ?? ""}|${marks.map((m) => `${m.time}:${m.text}`).join(",")}`;
     if (key !== marksKey) {
       marksKey = key;
       //
@@ -738,7 +773,10 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
     const next = given ?? null;
     const same = next !== null && item !== null && next.id === item.id;
     item = next;
-    if (!same) statsKey = "";
+    if (!same) {
+      statsKey = "";
+      unit = "mcap";
+    }
     root.classList.toggle("hastoken", next !== null);
     // A copy (VAMP) has no chart anywhere: the page shows only its report (the label page).
     root.classList.toggle("isvamp", next?.flagKind === "VAMP");

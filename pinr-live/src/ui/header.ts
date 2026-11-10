@@ -1,7 +1,7 @@
 import { scoreShown } from "../world/hub";
 import { createLpPills } from "./lppills";
 import { allLaunchpads, DEFAULT_LIST, isListFilter, listKey, listLabel, parseList } from "../world/lists";
-import { FILTERS, getHides, getRoster, getShowCopies, getSort, setShowCopies, setSort, SORTS, ROSTER_DEFAULT, ROSTER_MAX, setHides, type Filter, type Hides } from "../world/filters";
+import { FILTERS, getHides, getRoster, getSort, setSort, SORTS, ROSTER_DEFAULT, ROSTER_MAX, setHides, type Filter, type Hides } from "../world/filters";
 
 /** The sizes offered for the PINR page roster: the base (90), a few steps and the most (200). */
 const ROSTER_CHOICES = [60, ROSTER_DEFAULT, 120, 160, ROSTER_MAX];
@@ -330,7 +330,6 @@ export function createHeader(opts: HeaderOptions): Header {
   const HIDE_ROWS: [keyof Hides, string, string][] = [
     ["vamp", "Hide copies", "VAMPs and possible copies of another token's picture"],
     ["bots", "Hide bot-like coins", "Coins where bot-like trading was observed"],
-    ["serial", "Hide serial launchers", "Creators with many launches"],
   ];
   hideSec.append(el("div", "ptitle", "Take out"));
   for (const [k, label, hint] of HIDE_ROWS) {
@@ -350,20 +349,8 @@ export function createHeader(opts: HeaderOptions): Header {
   mayhemRow.addEventListener("click", () => moderation.setShowMayhem(!moderation.showMayhem));
   // Its own section, so it also shows on a phone, where the sheet leaves "Take out" off (as the apps' sheet does).
   //
-  const copiesRow = el("button", "row", `<span class="rt"><b>Show copies</b><i>Every coin tagged Copy on the PINR page; by default only the one leading its Arena battle</i></span><span class="tick"></span>`);
-  copiesRow.setAttribute("role", "menuitemcheckbox");
-  const syncCopies = (): void => {
-    copiesRow.classList.toggle("on", getShowCopies());
-    copiesRow.setAttribute("aria-checked", String(getShowCopies()));
-  };
-  copiesRow.addEventListener("click", () => {
-    setShowCopies(!getShowCopies());
-    syncCopies();
-    opts.onHide();
-  });
-  syncCopies();
   const mayhemSec = el("div", "psec pmayhem");
-  mayhemSec.append(mayhemRow, copiesRow);
+  mayhemSec.append(mayhemRow);
   const syncMayhem = (): void => {
     mayhemRow.classList.toggle("on", moderation.showMayhem);
     mayhemRow.setAttribute("aria-checked", String(moderation.showMayhem));
@@ -478,7 +465,7 @@ export function createHeader(opts: HeaderOptions): Header {
     closeAll();
     opts.onGuide();
   });
-  const paperChoice = el("button", "row", `${ICON_PAPER}<span class="rt"><b>Whitepaper</b><i>Coming soon</i></span>`);
+  const paperChoice = el("button", "row", `${ICON_PAPER}<span class="rt"><b>Whitepaper</b></span>`);
   paperChoice.addEventListener("click", () => {
     closeAll();
     opts.onPaper();

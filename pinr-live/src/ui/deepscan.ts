@@ -444,7 +444,13 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     const amt = (n: number): string => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n >= 1 ? n.toFixed(2) : n.toLocaleString("en-US", { maximumSignificantDigits: 3, maximumFractionDigits: 12 }));
     const rows = p.events.map((e) => {
       const r = el("div", "dspoolrow");
-      r.append(el("span", "dsdot", "●"), el("b", undefined, e.kind.charAt(0).toUpperCase() + e.kind.slice(1)));
+      //
+      const curveWords: Partial<Record<string, string>> = {
+        "creator changed": "The coin's creator was changed on Pump.fun",
+        "creator fees claimed": "The coin's creator fees were claimed",
+        "moved to its pool": "The coin moved from its launch curve to its own pool",
+      };
+      r.append(el("span", "dsdot", "●"), el("b", undefined, curveWords[e.kind] ?? e.kind.charAt(0).toUpperCase() + e.kind.slice(1)));
       const what: string[] = [];
       // Raw units (the engine did not read the decimals) are said as such, so a raw count is never read as a real amount.
       const coin = e.base !== undefined ? (e.raw ? `${amt(e.base)} raw token units` : `${amt(e.base)} tokens`) : "";
@@ -454,14 +460,14 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
         const pb = e.poolBase !== undefined ? (e.raw ? `${amt(e.poolBase)} raw token units` : `${amt(e.poolBase)} tokens`) : coin;
         const pq = e.poolQuote !== undefined ? (e.raw ? `${amt(e.poolQuote)} raw ${e.quoteSymbol} units` : `${amt(e.poolQuote)} ${e.quoteSymbol}`) : q;
         what.push([pq, pb].filter(Boolean).join(" and "));
-      } else if (e.kind !== "coin creator changed") what.push([q, coin].filter(Boolean).join(" and "));
+      } else if (e.kind !== "coin creator changed" && e.kind !== "creator changed") what.push([q, coin].filter(Boolean).join(" and "));
       for (const w of what) if (w) r.append(el("span", "dspoolwhat", ` · ${w}`));
-      if (e.kind === "coin creator changed") {
+      if (e.kind === "coin creator changed" || e.kind === "creator changed") {
         r.append(el("span", "dspoolwhat", " · "));
         if (e.oldCreator) r.append(el("span", undefined, "from "), acct(e.oldCreator), el("span", undefined, " "));
         if (e.newCreator) r.append(el("span", undefined, "to "), acct(e.newCreator));
       }
-      if (e.user && e.kind !== "coin creator changed") r.append(el("span", "dspoolwhat", " · by "), acct(e.user));
+      if (e.user && e.kind !== "coin creator changed" && e.kind !== "creator changed") r.append(el("span", "dspoolwhat", " · by "), acct(e.user));
       r.append(el("span", "dspoolwhen", ` · ${when(e.atMs)} · `), linkEl(`${scan}/tx/${e.sig}`, "View transaction"));
       return r;
     });
