@@ -23,13 +23,13 @@ export function flagWord(it: CopyFields): string {
 /** The opening sentence of the VAMP box. */
 export function vampIntro(proof: Item["copyProof"]): string {
   return proof === "chain"
-    ? "This token copies another token's picture, and Pump.fun's record shows a different wallet made it. PINR keeps no price, chart, stats or trades for a copy, and gives it no score. Only the original gets data."
+    ? "This token copies another token's picture, and Pump.fun's record shows a different wallet made it. PINR keeps no price, chart, stats or trades for a copy, and gives it no token health reading. Only the original gets data."
     : "This token has the same picture as an earlier token by another creator, so it is shown as a copy. The check on the two creators (Pump.fun's record) has not been done yet, so this is not confirmed. PINR keeps no price, chart, stats or trades for it. Only the original gets data.";
 }
 
 /** The warning on a token (scored or not) whose picture matches an earlier coin. */
 export function possibleLine(pc: NonNullable<Item["possibleCopy"]>, hasScore = true): string {
-  return `Its picture matches ${pc.ticker}, launched earlier by another creator. ${pc.proof === "chain" ? "Pump.fun's record shows two different wallets." : "The creator check has not been done."} PINR's picture matching has not been inspected yet, so this is a warning, not a verdict: ${hasScore ? "the score below is the engine's and stays." : "nothing is hidden or removed."}`;
+  return `Its picture matches ${pc.ticker}, launched earlier by another creator. ${pc.proof === "chain" ? "Pump.fun's record shows two different wallets." : "The creator check has not been done."} PINR's picture matching has not been inspected yet, so this is a warning, not a verdict: ${hasScore ? "the token health below is the engine's and stays." : "nothing is hidden or removed."}`;
 }
 
 /**

@@ -26,6 +26,7 @@ export interface OrbitFact {
   happenedText: string | null;
   source: string | null;
   link: string | null;
+  checks?: { label: string; url: string }[];
 }
 export interface OrbitGroup {
   id: GroupId;
@@ -202,6 +203,7 @@ export function orbitGroups(ev: Evidence | null, nowMs: number): OrbitGroup[] {
       happenedText: at ? `happened ${at}` : null,
       source: r.source,
       link: r.link,
+      checks: (r.checks ?? []).map((c) => ({ label: c.label, url: c.url })),
     });
   }
   //
@@ -270,6 +272,8 @@ export function gateView(g: Gate | undefined, nowMs: number): GateView | null {
     } else if (it.kind === "bot_launch") {
       // each wallet as the label source names it (an observed label, with where it comes from), linked to the wallet itself
       const links = it.wallets.filter((w) => w.link).map((w) => ({ label: `${w.label ?? "wallet"} ${short(w.id)}${w.source ? ` (${w.source})` : ""}`, href: w.link! }));
+      //
+      for (const r of it.receipts ?? []) if (r.link) links.push({ label: `${r.what}${r.value !== null && typeof r.value === "string" ? ` ${short(r.value)}` : ""}`, href: r.link });
       lines.push({ words: it.words, when: null, links });
     } else lines.push({ words: it.words, when: null, links: [] });
   }
@@ -277,7 +281,7 @@ export function gateView(g: Gate | undefined, nowMs: number): GateView | null {
     g.status === "not read yet"
       ? "Not checked yet."
       : g.status === "bot"
-        ? "Observed at launch: a bot launch. PINR does not list it."
+        ? "Observed at launch: bot launch pattern seen. PINR does not list it."
         : lines.length
           ? "Observed at launch:"
           : g.words[0] ?? "Nothing matching was found at launch.";

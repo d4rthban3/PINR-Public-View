@@ -1,7 +1,7 @@
 import { onLook, palette } from "../ui/theme";
 import type { StreamTile } from "../world/cards";
 import { SIM } from "../world/model";
-import { easeLean, LEAN_TILE, leanShift, makeFlow, realOf, ribbonMode, ribbonValue, stepReal, type Flow, type RibbonMode } from "../world/flow";
+import { easeLean, LEAN_TILE, leanShift, makeFlow, realOf, REPLAY_MS, ribbonMode, ribbonValue, stepReal, type Flow, type RibbonMode } from "../world/flow";
 
 /**
  * Flowing streams. Drawn on one canvas that sits ABOVE the blurred glass and BELOW the text, so the
@@ -64,7 +64,7 @@ interface TileState {
 }
 
 /** A ribbon that has just come to life (its coin's first trade, or the tile came back on screen) still shows the trades heard in the last moment: the trade that woke it is not lost. */
-const FIRST_LOOKBACK_MS = 3000;
+const FIRST_LOOKBACK_MS = REPLAY_MS;
 
 export class StreamLayer {
   private ctx: CanvasRenderingContext2D;
@@ -102,8 +102,21 @@ export class StreamLayer {
     this.states.clear();
   }
 
-  /** Pause drawing (and clear what is showing). Cheap to call every frame. */
-  hold(): void {
+  /**
+   *
+   * stepped from the tiles given, so no trade is lost to the pause and the ribbon resumes where it would have been; only the drawing waits.
+   */
+  hold(tiles?: StreamTile[], count = 0, dt = 0): void {
+    if (tiles && !this.still) {
+      const nowMs = Date.now();
+      for (let ti = 0; ti < count; ti++) {
+        const t = tiles[ti]!;
+        const st = this.states.get(t.id);
+        if (!st || t.w < MIN_TILE_PX) continue;
+        st.seen = this.frame; // still on screen: it keeps its state through the pause
+        if (ribbonMode(t.item, nowMs) === "real") st.cursor = stepReal(st.flow, dt, realOf(t.item.address)?.realTrades, st.cursor, this.rnd, nowMs);
+      }
+    }
     if (this.held) return;
     this.held = true;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -141,7 +154,7 @@ export class StreamLayer {
         st.cursor = nowMs - FIRST_LOOKBACK_MS;
       }
       st.seen = this.frame;
-      if (!this.still) st.cursor = stepReal(st.flow, dt, realOf(it.address)?.realTrades, st.cursor, this.rnd);
+      if (!this.still) st.cursor = stepReal(st.flow, dt, realOf(it.address)?.realTrades, st.cursor, this.rnd, nowMs);
 
       //
       st.lean = easeLean(st.lean, leanShift(it.lean5m, LEAN_TILE), dt);

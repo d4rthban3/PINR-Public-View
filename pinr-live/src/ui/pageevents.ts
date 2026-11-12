@@ -82,8 +82,14 @@ export function createPageEvents(): PageEvents {
   close.type = "button";
   close.setAttribute("aria-label", "Close");
   const grid = node("div", "evgrid");
-  panel.append(close, grid);
+  // The bottom fade says the panel scrolls (the phone's panel is shorter than its four cards); it hides once the end is in view.
+  const fade = node("div", "evfade");
+  panel.append(close, grid, fade);
   el.append(back, panel);
+  const checkMore = (): void => {
+    panel.classList.toggle("evmore", panel.scrollHeight - panel.clientHeight - panel.scrollTop > 6);
+  };
+  panel.addEventListener("scroll", checkMore, { passive: true });
   let last = "";
   const pictures = new Map<string, HTMLElement>();
   let open = false;
@@ -92,6 +98,7 @@ export function createPageEvents(): PageEvents {
     if (on === open) return;
     open = on;
     el.hidden = !on;
+    if (on) requestAnimationFrame(checkMore);
     listener?.(on);
   };
   back.addEventListener("pointerdown", () => set(false));
@@ -151,6 +158,7 @@ export function createPageEvents(): PageEvents {
           return card;
         }),
       );
+      requestAnimationFrame(checkMore);
     },
   };
 }

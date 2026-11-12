@@ -68,7 +68,7 @@ export function easeLean(shown: number, target: number, dt: number): number {
 
 const smooth = (k: number): number => k * k * (3 - 2 * k);
 
-export const MAX_PARTICLES = 56;
+export const MAX_PARTICLES = 160;
 
 export interface Flow {
   n: number;
@@ -121,11 +121,12 @@ function advance(f: Flow, dt: number): void {
 
 /** A coin that has had a real trade in this long is drawn from real trades only; after it, back to the counted ribbon. */
 export const REAL_FOR_MS = 30 * 60_000;
-/** How fast a real trade's dot crosses the ribbon (ribbon-lengths a second): about three seconds from heard to "now". */
-export const REAL_SPEED = 0.33;
+export const REAL_SPEED = 0.7;
+/** A ribbon that comes on screen shows the trades heard in the last of this long, each at the place it would have reached by now (a dot is gone after about 1.5 s, so more would be off the ribbon). */
+export const REPLAY_MS = 2000;
 /** Heard trades kept on a coin, and for how long: enough for every drawer to see each one once. */
-export const KEEP_TRADES = 40;
-export const KEEP_TRADES_MS = 15_000;
+export const KEEP_TRADES = 120;
+export const KEEP_TRADES_MS = 20_000;
 /** Prices of the latest real trades kept for a lite line. */
 export const KEEP_PRICES = 120;
 
@@ -214,15 +215,25 @@ export function noteRealTrade(it: RealTraded, side: "buy" | "sell", usd: number,
  * One frame of a real-trade ribbon: the dots ride on, and each trade heard since `cursor` becomes one dot at the old edge (a burst is spaced
  * along the ribbon so the dots do not pile up). Returns the new cursor. Nothing is born at random.
  */
-export function stepReal(f: Flow, dt: number, trades: readonly HeardTrade[] | undefined, cursor: number, rnd: () => number): number {
+/** Counts since the page loaded: trades turned into dots, trades left out because the coin already had the most dots, and trades already past the ribbon. For checks; costs three additions. */
+export const ribbonStats = { born: 0, capped: 0, passed: 0 };
+export function stepReal(f: Flow, dt: number, trades: readonly HeardTrade[] | undefined, cursor: number, rnd: () => number, nowMs?: number): number {
   if (dt > 0) advance(f, dt);
   let next = cursor;
   let k = 0;
   for (const tr of trades ?? []) {
     if (tr.t <= cursor) continue;
-    if (f.n < MAX_PARTICLES) {
+    //
+    // already have crossed the whole ribbon is not drawn (it is behind us), but it is counted as handled.
+    const age = nowMs === undefined ? 0 : Math.max(0, (nowMs - tr.t) / 1000);
+    const trueU = age * REAL_SPEED;
+    if (trueU > 1.08) ribbonStats.passed++;
+    else if (f.n >= MAX_PARTICLES) ribbonStats.capped++;
+    else {
+      ribbonStats.born++;
       const i = f.n++;
-      f.u[i] = Math.min(k++, 10) * 0.02 + rnd() * REAL_SPEED * Math.max(dt, 0.016); // a burst is spaced along the ribbon, not stacked on one point
+      const fresh = age < 0.1;
+      f.u[i] = trueU + (fresh ? Math.min(k++, 10) * 0.02 + rnd() * REAL_SPEED * Math.max(dt, 0.016) : 0); // a burst heard together is spaced along the ribbon, not stacked on one point
       f.lane[i] = Math.floor(rnd() * 3) / 2 + (rnd() - 0.5) * 0.12;
       f.spd[i] = REAL_SPEED * (0.9 + 0.2 * rnd());
       f.side[i] = tr.side;

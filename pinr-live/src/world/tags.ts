@@ -8,7 +8,7 @@ import { COIN_TAGS, type CoinTag } from "../../server/translate";
  */
 export const TAG_WORDS: Record<CoinTag, { chip: string; means: string }> = {
   vamp: { chip: "Copy", means: "Copies an earlier coin. The evidence is under “At launch” on its page." },
-  bot: { chip: "Bot launch", means: "Launched or traded by known bot wallets. PINR does not list it; the evidence is under “At launch” on its page." },
+  bot: { chip: "Bot launch", means: "Bot launch pattern seen. PINR does not list it; the evidence is under “At launch” on its page." },
   serial_launcher: { chip: "Serial launcher", means: "Its creator launches many coins. The evidence is under “At launch” on its page." },
 };
 

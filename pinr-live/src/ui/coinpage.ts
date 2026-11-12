@@ -9,7 +9,8 @@ import type { Evidence } from "../../server/evidence";
 import { createBadge } from "./badge";
 import { EYE_OFF_ICON } from "./hidemenu";
 import { createOrbit } from "./orbit";
-import { avatarChar, type Item } from "../world/model";
+import { avatarChar, statusLook, type Item } from "../world/model";
+import { scoreShown } from "../world/hub";
 import { pictureOf } from "../world/cards";
 import { attachPageGestures, createPlacer, type GestureOptions, type Placement } from "./pageoverlay";
 import { tagChips } from "../world/tags";
@@ -279,7 +280,34 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
   const periodEl = el("span", "cpperiod");
   changeRow.append(changeEl, periodEl);
   const tagsEl = el("div", "cptags");
-  head.append(idRow, nameEl, tagsEl, priceEl, changeRow);
+  //
+  //
+  const ringWrap = el("div", "cpring");
+  const ringSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  ringSvg.setAttribute("viewBox", "0 0 120 120");
+  ringSvg.setAttribute("aria-hidden", "true");
+  const ringTrack = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  const ringArc = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  for (const c of [ringTrack, ringArc]) {
+    c.setAttribute("cx", "60");
+    c.setAttribute("cy", "60");
+    c.setAttribute("r", "52");
+    c.setAttribute("fill", "none");
+    c.setAttribute("stroke-width", "9");
+  }
+  ringTrack.style.stroke = "rgba(var(--fg-rgb), 0.09)";
+  ringArc.setAttribute("stroke-linecap", "round");
+  ringArc.setAttribute("transform", "rotate(-90 60 60)");
+  ringSvg.append(ringTrack, ringArc);
+  const ringNum = el("div", "cpringnum");
+  const ringWord = el("div", "cpringword", "Token health");
+  ringWrap.append(ringSvg, ringNum, ringWord);
+  ringWrap.hidden = true;
+  const headTop = el("div", "cpheadtop");
+  const headId = el("div", "cpheadid");
+  headId.append(idRow, nameEl, tagsEl);
+  headTop.append(ringWrap, headId);
+  head.append(headTop, priceEl, changeRow);
 
   //
   const chartBox = el("div", "cpchart");
@@ -411,6 +439,15 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
     if (!item) return;
     const it = item;
     setT(nameEl, it.name);
+    const look = scoreShown() ? statusLook(it) : null;
+    if (look && look.numeric) {
+      const sc = Number(it.value);
+      ringWrap.hidden = false;
+      setT(ringNum, String(it.value));
+      ringNum.style.color = "var(--old-orange)";
+      ringArc.style.stroke = "var(--old-orange)";
+      ringArc.setAttribute("stroke-dasharray", `${(2 * Math.PI * 52 * sc) / 100} ${2 * Math.PI * 52}`);
+    } else ringWrap.hidden = true;
     const tagKey = `${(it.tags ?? []).join(",")}|${it.createdCount ?? ""}`;
     if (tagsEl.dataset.k !== tagKey) {
       tagsEl.dataset.k = tagKey;
@@ -546,7 +583,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
         handleScale: { mouseWheel: false, pinch: false, axisPressedMouseMove: false, axisDoubleClickReset: false },
         localization: { priceFormatter: (v: number) => fmtV(v), timeFormatter: (t: number) => candleTime(t, tickMode === "sec" ? 1 : tickMode === "time" ? 900 : 86_400) },
       });
-      const candle = chart.addSeries(lw.CandlestickSeries, { upColor: css("--live", "#d6ff3c"), downColor: css("--mandarin", "#ff8c1a"), borderVisible: false, wickUpColor: css("--live", "#d6ff3c"), wickDownColor: css("--mandarin", "#ff8c1a"), lastValueVisible: false, priceLineVisible: false, priceFormat: { type: "custom", formatter: (v: number) => fmtV(v), minMove: 1e-12 } });
+      const candle = chart.addSeries(lw.CandlestickSeries, { upColor: css("--old-green", "#12d44f"), downColor: css("--mandarin", "#ff8c1a"), borderVisible: false, wickUpColor: css("--old-green", "#12d44f"), wickDownColor: css("--mandarin", "#ff8c1a"), lastValueVisible: false, priceLineVisible: false, priceFormat: { type: "custom", formatter: (v: number) => fmtV(v), minMove: 1e-12 } });
       const volume = chart.addSeries(lw.HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "", lastValueVisible: false, priceLineVisible: false });
       volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
       chart.subscribeCrosshairMove((p) => {
@@ -656,7 +693,7 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
       }
     } else if (tv) tv.line.applyOptions({ visible: false });
     if (tv && asCandles) {
-      const up = css("--live", "#d6ff3c");
+      const up = css("--old-green", "#12d44f");
       const down = css("--mandarin", "#ff8c1a");
       tv.candle.applyOptions({ upColor: up, downColor: down, wickUpColor: up, wickDownColor: down });
       // On the 1-second chart a second with no trade is an empty slot (whitespace), never a bar.

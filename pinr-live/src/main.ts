@@ -1,6 +1,6 @@
 import { applyHubSwitch } from "./world/hub";
 import { browserCharts, CHART_RANGES, TIMEFRAMES } from "./world/browserchart";
-import { hearTrade } from "./world/flow";
+import { hearTrade, ribbonStats } from "./world/flow";
 import "@fontsource-variable/inter";
 import "./style.css";
 //
@@ -1475,6 +1475,8 @@ setInterval(() => {
     header.setGroupEmpty(pickedGroup !== null && counts[pickedGroup] === 0);
   } else header.setGroupEmpty(false);
 }, 700);
+//
+(window as unknown as { __ribbonStats?: typeof ribbonStats }).__ribbonStats = ribbonStats;
 if (import.meta.env.DEV) {
   Object.assign(window, {
     __cam: cam,
@@ -1761,7 +1763,7 @@ function frameBody(now: number): void {
   else if (holdFrames > 0) holdFrames--;
   const fast = holdFrames > 0;
   if (!off.has("streams")) {
-    if (fast) streams.hold();
+    if (fast) streams.hold(vt.list, vt.count, dt);
     else safely(() => streams.draw(vt.list, vt.count, dt, view.w, view.h, Math.min(dpr, STREAM_DPR), now / 1000));
   }
 

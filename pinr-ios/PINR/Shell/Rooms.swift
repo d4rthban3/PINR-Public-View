@@ -314,7 +314,7 @@ struct HeaderSheetView: View {
                 FeedStatusLine()
             case .pipeline:
                 Text("Discovery pipeline").font(Typo.sans(17, .bold))
-                Text("New launches are watched as they appear; the busiest coins are read first. The feed on this phone reads the first page every 5 seconds and the rest of the scored set every minute.")
+                Text("New launches are watched as they appear; the busiest coins are read first. The feed on this phone reads the first page every 5 seconds and the rest of the Token health set every minute.")
                     .font(Typo.sans(14)).foregroundStyle(Brand.paper.opacity(0.8))
                 FeedStatusLine()
             }

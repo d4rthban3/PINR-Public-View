@@ -323,12 +323,15 @@ export function applySnapshot(store: Store, byAddress: Map<string, Item>, snap: 
   });
 }
 
+/** Addresses asked for by address (findWhy): a MAYHEM coin among them is not left out by the Show Mayhem switch. */
+const askedFor = new Set<string>();
 function applyOne(store: Store, byAddress: Map<string, Item>, t: WireToken, baseWeight: number, nowMs: number, firstLoad: boolean): void {
   const key = t.address.toLowerCase();
   let it = byAddress.get(key);
   // A coin this person has hidden never joins the store (and leaves it if it is there): it changes no score, it is only not shown here.
   // Item 114: so does a MAYHEM coin while "Show Mayhem" is off (the default).
-  if (moderation.leftOut(key, t.noScoreLabel)) {
+  // A coin someone asked for by its address (a ?coin= link, a search) opens even while Mayhem is off; only a coin this person hid stays out.
+  if (moderation.leftOut(key, askedFor.has(key) ? null : t.noScoreLabel)) {
     if (it) {
       byAddress.delete(key);
       store.items.splice(store.items.indexOf(it), 1);
@@ -510,6 +513,7 @@ export class LiveFeed implements Feed {
       const j = (await r.json()) as { token?: WireToken; hidden?: boolean; notice?: unknown };
       if (!j.token || typeof j.token.address !== "string") return { found: false, notice: noticeOf(j) };
       //
+      askedFor.add(j.token.address.toLowerCase());
       this.tailPages.unshift([j.token]);
       this.tailKeys.add(j.token.address.toLowerCase());
       return { found: true };

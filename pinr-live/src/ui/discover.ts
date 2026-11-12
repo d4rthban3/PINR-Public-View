@@ -7,7 +7,7 @@ import { allLaunchpads, DEFAULT_LIST, isListFilter, listKey, listLabel, parseLis
 import { ageText, money, rankDiscover, signedPct, type DiscoverTab } from "../world/discoverlist";
 import { LIME, MANDARIN, SIZE_ALPHAS, sizeOffset } from "../engine/streams";
 import { pictureOf } from "../world/cards";
-import { easeLean, LEAN_ROW, leanShift, leanWords, lastTradeText, makeFlow, lineFromTrades, realOf, ribbonMode, ribbonValue, stepReal, type Flow, type RibbonMode } from "../world/flow";
+import { easeLean, LEAN_ROW, leanShift, leanWords, lastTradeText, makeFlow, lineFromTrades, realOf, REPLAY_MS, ribbonMode, ribbonValue, stepReal, type Flow, type RibbonMode } from "../world/flow";
 import { createBadge, type Badge } from "./badge";
 import { flagWord } from "../world/copynote";
 import { ribbonLegendEl } from "../world/ribbonlegend";
@@ -576,11 +576,19 @@ export function createDiscover(opts: DiscoverOptions): Discover {
     ribAcc += Math.min(0.05, Math.max(0, nowSec - lastRib));
     lastRib = nowSec;
     //
-    if (!calm) return;
+    //
     const dt = ribAcc;
     ribAcc = 0;
     const nowMs = Date.now();
     const still = opts.still();
+    if (!calm) {
+      if (!still) for (const r of rows) {
+        const it = r.item;
+        if (!it || !r.vis || r.seen === 0 || r.flowId !== it.id || it.status === "flag" || it.status === "checking") continue;
+        if (ribbonMode(it, nowMs) === "real") r.cursor = stepReal(r.flow, dt, realOf(it.address)?.realTrades, r.cursor, rnd, nowMs);
+      }
+      return;
+    }
     for (const r of rows) {
       const it = r.item;
       const c = r.ribbon.getContext("2d")!;
@@ -608,13 +616,13 @@ export function createDiscover(opts: DiscoverOptions): Discover {
       if (r.flowId !== it.id || r.seen === 0 || r.flowMode !== mode) {
         r.flowId = it.id;
         r.flowMode = mode;
-        r.cursor = nowMs - 3000; // the trade that woke the ribbon is not lost
+        r.cursor = nowMs - REPLAY_MS;
         // A real ribbon never starts with made-up dots: it takes the trades heard from now on.
         r.flow.n = 0;
         r.flow.acc = 0;
       }
       r.seen = nowSec;
-      r.cursor = stepReal(r.flow, dt, realOf(it.address)?.realTrades, r.cursor, rnd);
+      r.cursor = stepReal(r.flow, dt, realOf(it.address)?.realTrades, r.cursor, rnd, nowMs);
       //
       r.lean = easeLean(r.lean, leanShift(it.lean5m, LEAN_ROW), dt);
       const yAt = (u: number): number => RIB_H * (1 - 0.5 * (ribbonValue(it.hist, it.histAge, SIM.histEvery, imp, u) - 0.5) - r.lean);

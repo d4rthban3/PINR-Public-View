@@ -1,3 +1,5 @@
+import { createRadar } from "./radar";
+import type { Venue } from "../../server/venues";
 import { UNTRACKED_WORDS, untrackedCoins } from "../world/evidencefetch";
 import { pinchScene } from "./pinch";
 import { observedWords, scoreShown } from "../world/hub";
@@ -273,6 +275,8 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
   const linksBody = el("div", "dssocial");
   socialSec.append(linksBody);
 
+  const radar = createRadar();
+
   // --- similar tokens: same chain, close in size and age (measured facts only) ---
   const similarSec = el("section", "dssec");
   similarSec.append(el("h2", "dsh", "Similar tokens"));
@@ -287,7 +291,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
   if (scoreShown()) scanSec.append(el("p", "dsscannote", `${SCORE_NOTICE} Nothing here moves the token health reading.`));
   const scanBody = el("div", "dsscan");
   scanSec.append(scanBody);
-  page.append(hero, vampBox, possibleBox, chartWrap, ranges, scoreSec, tradesSec, checksSec, factsSec, readSec, socialSec, scanSec, similarSec, statsSec, fine);
+  page.append(hero, vampBox, possibleBox, chartWrap, ranges, scoreSec, tradesSec, checksSec, factsSec, readSec, radar.el, socialSec, scanSec, similarSec, statsSec, fine);
 
   // --- the bottom bar ---
   const bar = el("div", "dsbar");
@@ -475,8 +479,14 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     poolBody.replaceChildren(...rows, foot);
   }
 
-  const bandWords = (b: string): string => (scoreShown() ? b : observedWords(b));
-  const bandClass = (b: string): string => (!scoreShown() ? (observedWords(b) === "worth a closer look" ? "weak" : "none") : b === "Strong" ? "good" : b === "Fair" ? "fair" : b === "Weak" ? "weak" : b === "Clear" ? "clear" : "none");
+  const bandWords = (b: string): string => {
+    const w = b === "Not graded" || b === "Read, not graded" ? "observed" : observedWords(b);
+    return w === "observed" ? "Looked at" : w === "worth a closer look" ? "Worth a closer look" : "Not read";
+  };
+  const bandClass = (b: string): string => {
+    const w = bandWords(b);
+    return w === "Looked at" ? "clear" : w === "Worth a closer look" ? "weak" : "none";
+  };
   // one clock on the coin page: the viewer's own, as Recent trades shows it (W2)
   const when = (ms: number): string => new Date(ms).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const RESULT_WORDS: Record<SocialClaim["result"], string> = { MATCHES: "Matches the dossier", DIVERGES: "Differs from the dossier", UNVERIFIABLE: "Cannot be checked against the dossier", "NOT CHECKABLE": "An opinion or promise, not checkable" };
@@ -623,16 +633,25 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     else if (!d.checks.length) note(checksBody, "No checks were read for this token yet.");
     else
       checksBody.replaceChildren(
-        ...d.checks.map((c) => {
-          const row = el("div", "dscheck");
-          row.append(el("span", undefined, c.name), el("b", `dsband ${bandClass(c.band)}`, c.reason ? `${bandWords(c.band)} · ${c.reason}` : bandWords(c.band)));
+        //
+        // observed (Site's sentence, absent when the check was not read) and its receipt. No percentage, no weight, no priority order.
+        ...d.checks.map((c, i) => {
+          const row = el("div", "dsclrow");
+          const name = el("div", "dsclname", c.name);
           //
-          if (!c.source || c.readAtMs === undefined || !c.link) return row;
-          const wrap = el("div", "dscheckw");
-          wrap.append(row, receiptLine(c.source, c.readAtMs, c.link));
-          return wrap;
+          const notGraded = c.band === "Not graded" || c.band === "Read, not graded";
+          const chipWord = bandWords(c.band);
+          const band = el("b", `dsband ${bandClass(c.band)}`, chipWord);
+          const why = el("div", "dsclwhy");
+          why.append(el("div", undefined, c.observed ?? (notGraded ? "PINR read this and gave it no grade." : (c.reason ?? (chipWord === "Looked at" ? "PINR looked at this; no detail was given." : "Not read yet.")))));
+          if (c.observed && c.reason) why.append(el("div", "dsclreason", c.reason));
+          //
+          if (chipWord !== "Not read" && c.source && c.readAtMs !== undefined && c.link) why.append(receiptLine(c.source, c.readAtMs, c.link));
+          row.append(el("span", "dsclnum", String(i + 1)), name, band, why);
+          return row;
         }),
       );
+    radar.render((d as { venues?: Venue[] }).venues);
     if (!d.facts.length) note(factsBody, "No chain facts read yet.");
     else
       factsBody.replaceChildren(
@@ -1124,7 +1143,7 @@ export function createDeepScan(opts: DeepScanOptions): DeepScan {
     setItem,
     place,
     mountDossier(host) {
-      dossierWrap.append(vampBox, possibleBox, scoreSec, tradesSec, poolSec, checksSec, intentSec, budgetSec, factsSec, readSec, socialSec, scanSec, similarSec, statsSec, fine, bar);
+      dossierWrap.append(vampBox, possibleBox, scoreSec, tradesSec, poolSec, checksSec, intentSec, budgetSec, factsSec, readSec, radar.el, socialSec, scanSec, similarSec, statsSec, fine, bar);
       host.append(dossierWrap);
     },
     liveTrade(t) {

@@ -1,3 +1,4 @@
+import { siteMark } from "./radar";
 import type { Evidence } from "../../server/evidence";
 import type { Item } from "../world/model";
 import { pinchBig, pinchScene, pinchSmall, poseOf } from "./pinch";
@@ -103,7 +104,21 @@ export function createOrbit(opts: OrbitOptions): Orbit {
         const text = el("span", "orbtext", f.text);
         const meta = el("span", "orbmeta", [f.happenedText, f.readText, f.source, f.onchain && !f.link ? "no receipt link yet" : ""].filter(Boolean).join(" · "));
         row.append(dot, text, meta);
-        if (f.link) {
+        if (f.checks?.length) {
+          //
+          const places = el("div", "orbplaces");
+          (f.checks ?? []).forEach((c, i) => {
+            //
+            if (i === 1) places.append(el("span", "orbalso", "also check"));
+            const a = el("a", i === 0 ? "orbplace src" : "orbplace");
+            a.href = c.url;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer nofollow";
+            a.append(siteMark(c.label), el("span", undefined, i === 0 ? `Source: ${c.label}` : c.label));
+            places.append(a);
+          });
+          row.append(places);
+        } else if (f.link) {
           const a = el("a", "orblink", "see it");
           a.href = f.link;
           a.target = "_blank";
