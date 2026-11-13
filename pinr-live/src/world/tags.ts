@@ -58,6 +58,16 @@ export function tileTagPlan(tags: readonly CoinTag[]): { shown: CoinTag[]; more:
 export function tileTagChips(tags: readonly CoinTag[], created?: number | null): HTMLElement[] {
   const { shown, more } = tileTagPlan(tags);
   const chips = tagChips(shown, created);
+  // Release walk 12 Nov: on a tile the number shortens (5,243 -> 5.2K) so the words "coins created" always fit whole.
+  if (typeof created === "number" && created >= 1000) {
+    for (const c of chips) {
+      const n = c.querySelector(".tagnum");
+      if (n) {
+        n.textContent = created >= 10000 ? `${Math.round(created / 1000)}K` : `${(created / 1000).toFixed(1)}K`;
+        c.title = `${created.toLocaleString("en-US")} coins created. ${c.title}`;
+      }
+    }
+  }
   if (more.length) {
     const m = document.createElement("span");
     m.className = "tagchip tag-more";

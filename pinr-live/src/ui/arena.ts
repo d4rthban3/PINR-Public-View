@@ -25,7 +25,7 @@ export function arenaShown(groups: readonly ArenaGroup[], showMayhem: boolean): 
 
 /**
  *
- * minutes' volume, then X presence, then the chart, so you see which version is drawing the money. Observed figures only: a dash is a figure no
+ * minutes' volume, then X presence, then the chart, so you see which version is drawing the money. Observed figures only: "not checked" (a dash on the two money figures) is a figure no
  * source gave, never a zero; "earliest launch" is what the launch times show, not a judgement.
  */
 export interface ArenaOptions extends GestureOptions {
@@ -55,6 +55,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e;
 }
 const dash = "—";
+const notChecked = "not checked";
 const ICON_SEARCH = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>';
 export function arenaMatches(m: Pick<ArenaCoin, "name" | "ticker" | "address">, query: string): boolean {
   const q = visibleText(query).toLowerCase().replace(/^\$/, "").trim();
@@ -80,16 +81,16 @@ function memberRow(m: ArenaCoin, rank: number, onOpen: (a: string) => void): HTM
     // a picture that does not load is asked of PINR's own picture server once (as the tiles do), then shows the name's first letter, never
     // the browser's broken-image mark (checklist 5)
     img.addEventListener("error", () => {
-      const own = `/api/img?a=${encodeURIComponent(m.address)}`;
+      const own = `/api/img?a=${encodeURIComponent(m.address)}&v=2`;
       if (!img.src.includes("/api/img")) img.src = own;
       else pic.textContent = initial;
     });
     pic.append(img);
   } else pic.textContent = initial;
   const who = el("span", "arwho");
-  who.append(el("b", undefined, `${rank}. ${name}`), el("span", "artick", m.ticker ? `$${m.ticker.replace(/^\$/, "")}` : dash));
+  who.append(el("b", undefined, `${rank}. ${name}`), el("span", "artick", m.ticker ? `$${m.ticker.replace(/^\$/, "")}` : notChecked));
   const meta = [m.launchpad ?? (m.chain ? chainName(m.chain) : ""), m.launchedAtMs ? `${ageText(Math.max(0, (Date.now() - m.launchedAtMs) / 60_000))} old` : ""].filter(Boolean).join(" · ");
-  who.append(el("span", "armeta", meta || dash));
+  who.append(el("span", "armeta", meta || notChecked));
   if (m.earliest) who.append(el("span", "archip", "earliest launch"));
   if (m.tags?.length) {
     const t = el("span", "artags");
@@ -102,13 +103,13 @@ function memberRow(m: ArenaCoin, rank: number, onOpen: (a: string) => void): HTM
     f.dataset.lab = label;
     return f;
   };
-  const x = m.xPosts !== null ? `${m.xPosts} post${m.xPosts === 1 ? "" : "s"}` : m.hasX ? "linked" : dash;
-  const chg = m.change24hPct === null ? dash : signedPct(m.change24hPct);
+  const x = m.xPosts !== null ? `${m.xPosts} post${m.xPosts === 1 ? "" : "s"}` : m.hasX ? "linked" : notChecked;
+  const chg = m.change24hPct === null ? notChecked : signedPct(m.change24hPct);
   row.append(
     pic,
     who,
-    // not read yet is a dash, never "$0 · 0 tx" (checklist 7); an older server without the flag counts as read
-    fig("30 min", m.recentKnown === false ? dash : m.recentAtLeast ? `${money(m.recentUsd)}+ · ${m.recentTrades}+ tx` : `${money(m.recentUsd)} · ${m.recentTrades} tx`, "arhot"),
+    //
+    fig("30 min", m.recentKnown === false ? notChecked : m.recentAtLeast ? `${money(m.recentUsd)}+ · ${m.recentTrades}+ tx` : `${money(m.recentUsd)} · ${m.recentTrades} tx`, "arhot"),
     fig("24h vol", usd(m.volume24hUsd)),
     fig("X", x),
     fig("24h", chg, m.change24hPct === null ? "" : m.change24hPct >= 0 ? "up" : "down"),

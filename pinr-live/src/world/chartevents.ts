@@ -77,3 +77,28 @@ export function eventMarkers(events: readonly ChartEvent[], times: readonly numb
   }
   return out.slice(-MAX_MARKERS);
 }
+
+/**
+ * Release walk 12 Nov: a label's top so it does not land on a label already placed. It moves one label height at a time in `dir` (-1 up, 1 down), then the other
+ * way if that runs out of room; if neither frees it, it stays where it wanted to be.
+ */
+export function apartTop(
+  want: { left: number; top: number; w: number; h: number },
+  placed: readonly { l: number; t: number; r: number; b: number }[],
+  height: number,
+  dir: 1 | -1,
+): number {
+  const hits = (t: number): boolean => placed.some((p) => want.left < p.r && want.left + want.w > p.l && t < p.b && t + want.h > p.t);
+  if (!hits(want.top)) return want.top;
+  const step = want.h + 3;
+  for (const d of [dir, -dir]) {
+    let t = want.top;
+    for (let n = 0; n < 16; n++) {
+      const next = t + d * step;
+      if (next < 0 || next + want.h > height) break;
+      t = next;
+      if (!hits(t)) return t;
+    }
+  }
+  return want.top;
+}

@@ -4,7 +4,7 @@ import { foldPrice, type Candle } from "../world/livecandle";
 import { changeWindowLabel, COIN_RANGES, formatPrice, type RangeId } from "../world/format";
 import { ageText, money, signedPct } from "../world/discoverlist";
 import type { IChartApi, IPriceLine, ISeriesApi, ISeriesMarkersPluginApi, SeriesMarker, Time, UTCTimestamp } from "lightweight-charts";
-import { eventMarkers, type ChartEvent } from "../world/chartevents";
+import { apartTop, eventMarkers, type ChartEvent } from "../world/chartevents";
 import type { Evidence } from "../../server/evidence";
 import { createBadge } from "./badge";
 import { EYE_OFF_ICON } from "./hidemenu";
@@ -105,13 +105,14 @@ export function chartLinks(it: Pick<Item, "address" | "chain" | "launchpad">): {
   if (slug === "solana" && /pump/i.test(lp)) out.push({ label: "Pump.fun", href: `https://pump.fun/coin/${e}` });
   //
   const explorer = ({ solana: ["Solscan", "https://solscan.io/token/"], base: ["Basescan", "https://basescan.org/token/"], bsc: ["BscScan", "https://bscscan.com/token/"], ethereum: ["Etherscan", "https://etherscan.io/token/"] } as Record<string, [string, string]>)[slug];
-  if (explorer) out.push({ label: explorer[0], href: `${explorer[1]}${e}` });
   if (slug === "base" && /clanker/i.test(lp)) out.push({ label: "Clanker", href: `https://www.clanker.world/clanker/${e}` });
   if (slug === "base" && /zora/i.test(lp)) out.push({ label: "Zora", href: `https://zora.co/coin/base:${e}` });
   // Virtuals' own page is keyed by the address the coin trades as (CHAINS checked: it forwards to its /virtuals/<id> page, on the curve or graduated).
   if (slug === "base" && /virtuals/i.test(lp)) out.push({ label: "Virtuals", href: `https://app.virtuals.io/prototypes/${e}` });
   if (slug === "bsc" && /four\.?meme/i.test(lp)) out.push({ label: "Four.meme", href: `https://four.meme/token/${e}` });
   if (slug === "bsc" && /flap/i.test(lp)) out.push({ label: "Flap", href: `https://flap.sh/bnb/${e}` });
+  // Item 168: the chain scanner goes last, never ahead of the launchpad's own page.
+  if (explorer) out.push({ label: explorer[0], href: `${explorer[1]}${e}` });
   //
   return out;
 }
@@ -525,6 +526,8 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
       const W = evLayer.clientWidth;
       const H = evLayer.clientHeight;
       const labels = evLayer.children;
+      // Release walk 12 Nov: labels that would land on one another are moved apart (up for a "bad" one, down otherwise), so no two overlap.
+      const placed: { l: number; t: number; r: number; b: number }[] = [];
       shownMarks.forEach((m, i) => {
         const lab = labels[i] as HTMLElement | undefined;
         if (!lab) return;
@@ -538,7 +541,9 @@ export function createCoinPage(opts: CoinPageOptions): CoinPage {
         const w = lab.offsetWidth;
         const h = lab.offsetHeight;
         const left = Math.max(0, Math.min(W - w, x - w / 2));
-        const top = Math.max(0, Math.min(H - h, m.tone === "bad" ? y - 12 - h : y + 10));
+        const want = Math.max(0, Math.min(H - h, m.tone === "bad" ? y - 12 - h : y + 10));
+        const top = apartTop({ left, top: want, w, h }, placed, H, m.tone === "bad" ? -1 : 1);
+        placed.push({ l: left, t: top, r: left + w, b: top + h });
         lab.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
       });
     });

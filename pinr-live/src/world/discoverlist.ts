@@ -44,6 +44,9 @@ export function rankDiscover(tab: DiscoverTab, all: readonly Item[], query: stri
   return list.slice(0, DISCOVER_ROWS);
 }
 
+export const NOT_CHECKED = "not checked";
+export const orNC = (s: string): string => (s === "—" ? NOT_CHECKED : s);
+
 /** 1_234_567 -> "$1.23M". Missing stays missing. */
 export function money(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "—";

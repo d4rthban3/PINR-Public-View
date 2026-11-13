@@ -41,13 +41,14 @@ fun FullCard(t: Token, time: () -> Double, insets: PaddingValues, onClose: () ->
                 .glass(28.dp).clickable(enabled = false) {}.verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            // The Close chip sits over the panel's top right corner instead of beside the tile: the larger tile left it only about 60 dp, which cut "Close" to "Cl"
+            // (the inspector's note, 12 Nov).
+            Box(Modifier.fillMaxWidth()) {
                 //
-                TileView(t, 200.dp, time, Modifier.width(200.dp))
-                Spacer(Modifier.weight(1f))
+                TileView(t, 200.dp, time, Modifier.width(200.dp).align(Alignment.TopStart))
                 BasicText(
                     "Close",
-                    Modifier.background(Brand.fg.copy(alpha = 0.09f), RoundedCornerShape(50)).clickable(onClick = onClose).padding(horizontal = 18.dp, vertical = 11.dp).testTag("fullcard-close"),
+                    Modifier.align(Alignment.TopEnd).background(Brand.fg.copy(alpha = 0.09f), RoundedCornerShape(50)).clickable(onClick = onClose).padding(horizontal = 18.dp, vertical = 11.dp).testTag("fullcard-close"),
                     style = sans(14.sp, Brand.paper, FontWeight.SemiBold),
                     softWrap = false, maxLines = 1,
                 )

@@ -13,7 +13,7 @@ import { groupOf, type Group } from "./groups";
 import { isNameless, tickerText } from "./nameless";
 import { tileNumber } from "./scoretile";
 import { scoreColor } from "./scorecolor";
-import { money } from "./discoverlist";
+import { money, NOT_CHECKED } from "./discoverlist";
 import { ADVICE_LINE, SCORE_NOTICE, SCORE_TAG } from "../ui/scorenotice";
 import { lastTradeText, realOf, ribbonMode } from "./flow";
 import { scoredAgoShort } from "./format";
@@ -238,7 +238,7 @@ export function pictureOf(src: string, name: string, address?: string | null): H
   let current = src;
   img.addEventListener("error", () => {
     if (!src.startsWith("/api/img") && address && current === src) {
-      current = `/api/img?a=${encodeURIComponent(address)}`;
+      current = `/api/img?a=${encodeURIComponent(address)}&v=2`;
       img.src = current;
       return;
     }
@@ -979,9 +979,9 @@ export class CardField {
     const it = c.item;
     const flagged = it.status === "flag";
     const mc = flagged ? "" : money(it.mcap);
-    const ath = flagged ? "" : Number.isFinite(it.ath) && it.ath > 0 ? money(it.ath) : "—";
+    const ath = flagged ? "" : Number.isFinite(it.ath) && it.ath > 0 ? money(it.ath) : NOT_CHECKED;
     //
-    const txns = flagged ? "" : it.trades1h !== undefined && Number.isFinite(it.trades1h) ? `${countShort(it.trades1h)} /1h` : "—";
+    const txns = flagged ? "" : it.trades1h !== undefined && Number.isFinite(it.trades1h) ? `${countShort(it.trades1h)} /1h` : NOT_CHECKED;
     //
     // first; a rewards program's fee at its standard rate comes last, after ATH, so it is the first line a short tile drops.
     const fee = flagged || !it.transferFee ? "" : feeShort(it.transferFee);
@@ -1010,7 +1010,7 @@ export class CardField {
       if (txns !== "") {
         const x = document.createElement("span");
         x.className = "ftx";
-        x.textContent = ` · ${txns === "—" ? "— tx" : txns.replace(" /1h", " tx/1h")}`;
+        x.textContent = ` · ${txns === NOT_CHECKED ? "tx not checked" : txns.replace(" /1h", " tx/1h")}`;
         r.querySelector(".fmc")!.append(x);
       }
       rows.push(r);
@@ -1120,7 +1120,7 @@ export class CardField {
         // A longer label (MAYHEM, HONEYPOT) is set smaller so it never runs into the coverage figure.
         c.el.dataset.flen = look.kind === "flag" ? (look.text.length <= 4 ? "s" : look.text.length <= 7 ? "m" : "l") : "";
         // Coverage is how much of PINR's reading loaded. A coin PINR has not read yet says so instead of a "0%".
-        setText(c.covEl, it.coverage > 0 ? `${it.coverage}%` : "—");
+        setText(c.covEl, it.coverage > 0 ? `${it.coverage}%` : NOT_CHECKED);
         setEarly(c.earlyEl, showsEarly(it));
         (c.el.querySelector(".advtag") as HTMLElement | null)?.toggleAttribute("hidden", !look.numeric);
         setText(c.ctagEl, look.numeric ? (ago !== null ? `${SCORE_TAG} · ${ago}` : SCORE_TAG) : "");

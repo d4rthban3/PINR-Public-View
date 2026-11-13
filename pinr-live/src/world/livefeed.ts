@@ -459,6 +459,8 @@ export class ListCopy {
   }
 }
 
+export const GATHER_MS = 50;
+
 export class LiveFeed implements Feed {
   private byAddress = new Map<string, Item>();
   private live = new Map<string, { priceUsd: number; atMs: number }>();
@@ -636,11 +638,34 @@ export class LiveFeed implements Feed {
         return;
       }
       this.streamOpen = true;
-      // Changes are gathered and applied about four times a second (and not at all while the camera is flying), so a busy stream never works the page
+      // Changes are gathered and applied about ten times a second (every GATHER_MS, 12 Nov: was four times a second) (and not at all while the camera is flying), so a busy stream never works the page
       //
       this.queue.push(c);
+      if (c.trades?.length) this.recvAt.push(performance.now());
       this.scheduleFlush();
     });
+  }
+
+  /**
+   * Release checklist line 2 (Manager 12 Nov): how long a pushed trade waits in the browser, from its stream message arriving to the frame that
+   * draws it (the wait for the gather, GATHER_MS and any camera flight, then the paint). Only timings are kept (a ring of the last 200); nothing is
+   * shown or sent. Read from the console as `window.__pinrTradeLag()`: { n, p50, p90, max } in milliseconds.
+   */
+  private recvAt: number[] = [];
+  private paintLag: number[] = [];
+  private noteTradePaint(arrivals: number[]): void {
+    if (!arrivals.length || typeof requestAnimationFrame !== "function") return;
+    requestAnimationFrame(() => {
+      const now = performance.now();
+      for (const a of arrivals) this.paintLag.push(Math.round(now - a));
+      if (this.paintLag.length > 200) this.paintLag.splice(0, this.paintLag.length - 200);
+    });
+  }
+  tradeLag(): { n: number; p50: number; p90: number; max: number } | null {
+    const v = [...this.paintLag].sort((a, b) => a - b);
+    if (!v.length) return null;
+    const q = (p: number): number => v[Math.min(v.length - 1, Math.floor(p * v.length))]!;
+    return { n: v.length, p50: q(0.5), p90: q(0.9), max: v[v.length - 1]! };
   }
 
   private queue: StreamChanges[] = [];
@@ -656,12 +681,14 @@ export class LiveFeed implements Feed {
       if (this.defer() && Date.now() - this.waitingSince < 2500) return this.scheduleFlush();
       this.waitingSince = 0;
       this.flush();
-    }, 250);
+    }, GATHER_MS);
   }
 
   private flush(): void {
     const batch = this.queue;
     this.queue = [];
+    const arrivals = this.recvAt;
+    this.recvAt = [];
     let any = false;
     for (const c of batch) {
       const got = this.copy.apply(c);
@@ -691,6 +718,7 @@ export class LiveFeed implements Feed {
       }
       if (this.restWanted) for (const k of got.restGone) this.tailKeys.delete(k.toLowerCase());
     }
+    this.noteTradePaint(arrivals);
     if (!any) return;
     const snap = this.copy.snapshot();
     if (snap) {

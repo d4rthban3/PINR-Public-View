@@ -3,6 +3,7 @@ import { browserCharts, CHART_RANGES, TIMEFRAMES } from "./world/browserchart";
 import { hearTrade, ribbonStats } from "./world/flow";
 import "@fontsource-variable/inter";
 import "./style.css";
+import { mountDebug } from "./ui/debugpanel";
 //
 applyHubSwitch();
 import { look, onLook, startTheme } from "./ui/theme";
@@ -141,7 +142,12 @@ const field = new CardField(glassLayer, stage);
 const store = makeStore();
 /** The tiles show the engine's real results and the launchpads' own lists, read by the feed server. There is no simulated data. */
 const liveFeed = new LiveFeed();
+(window as unknown as { __pinrTradeLag?: () => unknown }).__pinrTradeLag = () => liveFeed.tradeLag(); // timing only: stream message to the drawing frame (release line 2)
 liveFeed.defer = () => holdFrames > 0 || journey !== null;
+// ?debug: a hidden corner panel (errors, failed requests, letter pictures, stream, frame rate, Copy report); only when "debug" is in the address
+if (/[?&]debug\b/.test(location.search)) {
+  mountDebug({ link: () => liveFeed.link(), tradeLag: () => liveFeed.tradeLag(), tiles: () => store.items.length }); // synchronous, so the first requests are counted
+}
 /**
  *
  *

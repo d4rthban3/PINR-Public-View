@@ -4,7 +4,7 @@ import { foldPrice, type Candle as LiveCandle } from "../world/livecandle";
 import { attachPageGestures, createPlacer, type Placement } from "./pageoverlay";
 import { getSort, type Filter } from "../world/filters";
 import { allLaunchpads, DEFAULT_LIST, isListFilter, listKey, listLabel, parseList } from "../world/lists";
-import { ageText, money, rankDiscover, signedPct, type DiscoverTab } from "../world/discoverlist";
+import { ageText, money, NOT_CHECKED, orNC, rankDiscover, signedPct, type DiscoverTab } from "../world/discoverlist";
 import { LIME, MANDARIN, SIZE_ALPHAS, sizeOffset } from "../engine/streams";
 import { pictureOf } from "../world/cards";
 import { easeLean, LEAN_ROW, leanShift, leanWords, lastTradeText, makeFlow, lineFromTrades, realOf, REPLAY_MS, ribbonMode, ribbonValue, stepReal, type Flow, type RibbonMode } from "../world/flow";
@@ -875,7 +875,7 @@ export function createDiscover(opts: DiscoverOptions): Discover {
         r.byCountEl.hidden = rm === "none" || (rm === "real" && lt === "");
         setText(r.byCountEl, lt);
         r.byCountEl.title = "When the last real trade was heard from the stream. Each dot on the ribbon is one trade.";
-        setText(r.covPct, look.kind === "flag" ? "" : it.coverage <= 0 ? "—" : `${it.coverage}%`);
+        setText(r.covPct, look.kind === "flag" ? "" : it.coverage <= 0 ? NOT_CHECKED : `${it.coverage}%`);
         setText(r.covWord, look.kind === "flag" ? flagWord(it) : it.coverage <= 0 ? "unread" : "coverage");
         if (!scoreShown()) {
           //
@@ -887,11 +887,11 @@ export function createDiscover(opts: DiscoverOptions): Discover {
           r.adviceEl.hidden = true;
           r.ageEl.hidden = true;
         }
-        setText(r.chg, signedPct(it.change24h) + (Number.isFinite(it.change24h) && Number.isFinite(it.changeWindowH) && it.changeWindowH < 23 ? ` · ${Math.max(1, Math.round(it.changeWindowH))}h` : ""));
+        setText(r.chg, orNC(signedPct(it.change24h)) + (Number.isFinite(it.change24h) && Number.isFinite(it.changeWindowH) && it.changeWindowH < 23 ? ` · ${Math.max(1, Math.round(it.changeWindowH))}h` : ""));
         r.chg.dataset.dir = it.change24h < 0 ? "down" : "up";
-        setText(r.mcVal, it.status === "flag" ? "—" : money(it.mcap));
-        setText(r.athVal, it.status !== "flag" && Number.isFinite(it.ath) && it.ath > 0 ? money(it.ath) : "—");
-        setText(r.money, `VOL ${money(it.volume24h)}`);
+        setText(r.mcVal, it.status === "flag" ? "—" : orNC(money(it.mcap)));
+        setText(r.athVal, it.status !== "flag" && Number.isFinite(it.ath) && it.ath > 0 ? money(it.ath) : NOT_CHECKED);
+        setText(r.money, `VOL ${orNC(money(it.volume24h))}`);
       }
       if (r.viewId !== it.id) {
         // A reused row now shows another coin: its chart goes back to the live line.

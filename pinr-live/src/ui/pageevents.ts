@@ -1,5 +1,5 @@
 import type { Item } from "../world/model";
-import { tagChips } from "../world/tags";
+import { tagChips, tagsOf } from "../world/tags";
 import { pictureOf } from "../world/cards";
 
 /**
@@ -45,9 +45,44 @@ export function eventsOf(items: readonly Item[]): EventCard[] {
   const topPads = [...pads.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
   return [
     { id: "launched", kicker: "Just launched", title: "The newest coins PINR has seen", big: null, bigNote: "", rows: newest.map((it) => ({ image: it.image, address: it.address, label: it.name, note: ageWords(it.ageMin), tags: it.tags, created: it.createdCount })) },
-    { id: "trading", kicker: "Trading now", title: "Most trades in the last 5 minutes", big: null, bigNote: "", rows: busy.map((it) => ({ image: it.image, address: it.address, label: it.name, note: `${(it.trades5m ?? 0).toLocaleString("en-US")} trades`, tags: it.tags, created: it.createdCount })) },
+    { id: "trading", kicker: "Trading now", title: "Most trades in the last 5 minutes", big: null, bigNote: "", rows: busy.map((it) => ({ image: it.image, address: it.address, label: it.name, note: `${(it.trades5m ?? 0).toLocaleString("en-US")} ${it.trades5m === 1 ? "trade" : "trades"}`, tags: it.tags, created: it.createdCount })) },
     { id: "today", kicker: "Today", title: "New in the last 24 hours", big: known.length ? today : null, bigNote: "coins launched and now being read", rows: [] },
     { id: "where", kicker: "Where from", title: "Launchpads on the page", big: null, bigNote: "", rows: topPads.map(([name, n]) => ({ image: null, label: name, note: `${n} coins` })) },
+  ];
+}
+
+/** What Site's `/api/happening` sends (contract "happening/1"): the four cards' numbers counted by the server over the whole site. */
+export interface Happening {
+  contract?: string;
+  asOfMs?: number;
+  launched?: HappeningCoin[];
+  trading?: HappeningCoin[];
+  today?: { count: number | null; of?: number };
+  where?: { launchpad: string; count: number }[];
+}
+export interface HappeningCoin {
+  address: string;
+  name: string;
+  imageUrl?: string | null;
+  launchedAtMs?: number;
+  trades5m?: number;
+  tags?: string[];
+}
+
+/**
+ *
+ * is not known, and the day's count is left out (never zero) when the server sent none. `createdOf` gives a serial launcher's coin count from the page's own list.
+ */
+export function eventsFromHappening(h: Happening, nowMs: number, createdOf?: (address: string) => number | undefined): EventCard[] {
+  const row = (c: HappeningCoin, note: string): EventRow => ({ image: c.imageUrl ?? null, address: c.address, label: c.name, note, tags: tagsOf({ tags: c.tags }), created: createdOf?.(c.address) });
+  const launched = (h.launched ?? []).filter((c) => Number.isFinite(c.launchedAtMs)).map((c) => row(c, ageWords(Math.max(0, (nowMs - (c.launchedAtMs as number)) / 60000))));
+  const trading = (h.trading ?? []).filter((c) => (c.trades5m ?? 0) > 0).map((c) => row(c, `${(c.trades5m as number).toLocaleString("en-US")} ${c.trades5m === 1 ? "trade" : "trades"}`));
+  const count = h.today && typeof h.today.count === "number" && Number.isFinite(h.today.count) ? h.today.count : null;
+  return [
+    { id: "launched", kicker: "Just launched", title: "The newest coins PINR has seen", big: null, bigNote: "", rows: launched },
+    { id: "trading", kicker: "Trading now", title: "Most trades in the last 5 minutes", big: null, bigNote: "", rows: trading },
+    { id: "today", kicker: "Today", title: "New in the last 24 hours", big: count, bigNote: "coins launched and now being read", rows: [] },
+    { id: "where", kicker: "Where from", title: "Launchpads on the page", big: null, bigNote: "", rows: (h.where ?? []).filter((w) => w.launchpad && Number.isFinite(w.count)).map((w) => ({ image: null, label: w.launchpad, note: `${w.count.toLocaleString("en-US")} coins` })) },
   ];
 }
 
@@ -91,6 +126,24 @@ export function createPageEvents(): PageEvents {
   };
   panel.addEventListener("scroll", checkMore, { passive: true });
   let last = "";
+  let lastItems: readonly Item[] = [];
+  // The server's whole-site counts (Site's /api/happening); until they arrive, or if they cannot be read, the cards use the page's own list.
+  let remote: Happening | null = null;
+  let remoteTimer = 0;
+  const createdOf = (address: string): number | undefined => lastItems.find((it) => it.address === address)?.createdCount;
+  const pull = async (): Promise<void> => {
+    try {
+      const r = await fetch("/api/happening", { cache: "no-store" });
+      if (!r.ok) return;
+      const j = (await r.json()) as Happening;
+      if (j && j.contract === "happening/1") {
+        remote = j;
+        paintNow();
+      }
+    } catch {
+      /* the page's own list stays */
+    }
+  };
   const pictures = new Map<string, HTMLElement>();
   let open = false;
   let listener: ((o: boolean) => void) | null = null;
@@ -98,7 +151,14 @@ export function createPageEvents(): PageEvents {
     if (on === open) return;
     open = on;
     el.hidden = !on;
-    if (on) requestAnimationFrame(checkMore);
+    if (on) {
+      requestAnimationFrame(checkMore);
+      void pull();
+      remoteTimer = window.setInterval(() => void pull(), 15000);
+    } else if (remoteTimer) {
+      clearInterval(remoteTimer);
+      remoteTimer = 0;
+    }
     listener?.(on);
   };
   back.addEventListener("pointerdown", () => set(false));
@@ -116,7 +176,13 @@ export function createPageEvents(): PageEvents {
       listener = fn;
     },
     refresh(items) {
-      const cards = eventsOf(items);
+      lastItems = items;
+      paintNow();
+    },
+  };
+  function paintNow(): void {
+      const items = lastItems;
+      const cards = remote ? eventsFromHappening(remote, Date.now(), createdOf) : eventsOf(items);
       const key = JSON.stringify(cards);
       if (key === last) return;
       last = key;
@@ -128,7 +194,7 @@ export function createPageEvents(): PageEvents {
           card.append(node("div", "evtex"));
           const body = node("div", "evin");
           body.append(node("div", "evk", c.kicker), node("h3", "evt", c.title));
-          if (c.big !== null) body.append(node("div", "evbig", String(c.big)), node("p", "evp", c.bigNote));
+          if (c.big !== null) body.append(node("div", "evbig", c.big.toLocaleString("en-US")), node("p", "evp", c.bigNote));
           for (const r of c.rows) {
             const row = node("div", "evr");
             if (r.image) {
@@ -159,6 +225,5 @@ export function createPageEvents(): PageEvents {
         }),
       );
       requestAnimationFrame(checkMore);
-    },
-  };
+  }
 }

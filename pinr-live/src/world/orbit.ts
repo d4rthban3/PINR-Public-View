@@ -243,15 +243,45 @@ export function earlierBy(thisMs: number | null, thatMs: number | null): string 
   if (h < 48) return `${h} h earlier`;
   return `${Math.round(h / 24)} days earlier`;
 }
+/**
+ *
+ * the server gives each gate coin `pageLink`, the launchpad's own page for it where the feed knows the coin's launchpad. That is the link; a coin with none
+ * keeps the engine's scanner link, and the label then names the scanner so nobody takes it for the launchpad.
+ */
+export interface PageLink {
+  label: string;
+  url: string;
+}
+type WithPage = { link: string | null; pageLink?: PageLink | null };
+const SCANNERS: Record<string, string> = { "solscan.io": "Solscan", "basescan.org": "BaseScan", "bscscan.com": "BscScan", "etherscan.io": "Etherscan" };
+function scannerName(url: string | null): string | null {
+  try {
+    return url ? SCANNERS[new URL(url).hostname.replace(/^www\./, "")] ?? null : null;
+  } catch {
+    return null;
+  }
+}
+/** The link to follow and the words that name its place: the launchpad page first, the scanner only when that is all there is (and said so). */
+export function sourceLink(c: WithPage): { href: string | null; place: string | null } {
+  const p = c.pageLink;
+  if (p && /^https:\/\//.test(p.url)) return { href: p.url, place: p.label };
+  return { href: c.link, place: scannerName(c.link) };
+}
 const coinLink = (c: GateCoin, nowMs: number): { label: string; when: string | null; href: string | null } => {
   const ago = scoredAgo(c.launchedAtMs, nowMs);
-  return { label: short(c.coin), when: ago ? `launched ${ago}` : null, href: c.link };
+  const { href, place } = sourceLink(c as GateCoin & WithPage);
+  return { label: place && href ? `${short(c.coin)} on ${place}` : short(c.coin), when: ago ? `launched ${ago}` : null, href };
 };
 
 /** True when the evidence file has loaded and carries no gate section: the coin page then says "Not checked yet." instead of staying silent. */
 export function gateNotChecked(ev: { gate?: Gate } | null | undefined, loaded: boolean): boolean {
   return loaded && !ev?.gate;
 }
+
+const coinSee = (c: GateCoin): { label: string; href: string }[] => {
+  const { href, place } = sourceLink(c as GateCoin & WithPage);
+  return href ? [{ label: `see ${short(c.coin)}${place ? ` on ${place}` : ""}`, href }] : [];
+};
 
 export function gateView(g: Gate | undefined, nowMs: number): GateView | null {
   if (!g) return null;
@@ -260,15 +290,18 @@ export function gateView(g: Gate | undefined, nowMs: number): GateView | null {
     if (it.kind === "earlier_lookalike") {
       const e = earlierBy(g.launchedAtMs, it.launchedAtMs);
       const links: GateLine["links"] = [];
-      if (it.link) links.push({ label: it.coin ? `see the earlier coin ${short(it.coin)}` : "see the earlier coin", href: it.link });
-      if (it.creatorLink) links.push({ label: it.creator ? `its creator ${short(it.creator)}` : "its creator", href: it.creatorLink });
+      const sl = sourceLink(it as WithPage);
+      if (sl.href) links.push({ label: `${it.coin ? `see the earlier coin ${short(it.coin)}` : "see the earlier coin"}${sl.place ? ` on ${sl.place}` : ""}`, href: sl.href });
+      const cp = (it as { creatorPageLink?: PageLink | null }).creatorPageLink;
+      const cl = cp && /^https:\/\//.test(cp.url) ? { href: cp.url, place: cp.label } : { href: it.creatorLink, place: scannerName(it.creatorLink) };
+      if (cl.href) links.push({ label: `${it.creator ? `its creator ${short(it.creator)}` : "its creator"}${cl.place ? ` on ${cl.place}` : ""}`, href: cl.href });
       lines.push({ words: it.words, when: e ? `launched ${e}` : null, links });
     } else if (it.kind === "same_creator_relaunch") {
-      lines.push({ words: it.words, when: null, links: it.coins.filter((c) => c.link).map((c) => ({ label: `see ${short(c.coin)}`, href: c.link! })) });
+      lines.push({ words: it.words, when: null, links: it.coins.flatMap((c) => coinSee(c)) });
     } else if (it.kind === "serial_launcher") {
       lines.push({ words: it.words, when: null, links: [] });
     } else if (it.kind === "fast_launcher") {
-      lines.push({ words: it.words, when: null, links: it.coins.filter((c) => c.link).slice(0, 8).map((c) => ({ label: `see ${short(c.coin)}`, href: c.link! })) });
+      lines.push({ words: it.words, when: null, links: it.coins.flatMap((c) => coinSee(c)).slice(0, 8) });
     } else if (it.kind === "bot_launch") {
       // each wallet as the label source names it (an observed label, with where it comes from), linked to the wallet itself
       const links = it.wallets.filter((w) => w.link).map((w) => ({ label: `${w.label ?? "wallet"} ${short(w.id)}${w.source ? ` (${w.source})` : ""}`, href: w.link! }));

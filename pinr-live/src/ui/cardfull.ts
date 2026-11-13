@@ -9,7 +9,7 @@ import { highlightShown, lookupTradeLink } from "./highlightline";
 /**
  *
  * viewer and sets it large on the site's glass tablet (the `.glass` panel every tile uses: the same edge, shadow, radius and light), with all of the
- * coin's data beside it and a Deep Scan button that goes on to the DeepScan page. Observed words only; a missing figure is a dash. Close sends the card
+ * coin's data beside it and a Deep Scan button that goes on to the DeepScan page. Observed words only; a missing figure says "Not checked yet". Close sends the card
  * back to its place.
  *
  *
@@ -92,6 +92,11 @@ export function createCardFull(opts: CardFullOptions): CardFull {
 
   function figure(label: string, value: string, tone?: "up" | "down"): HTMLElement {
     const f = el("div", "cffig");
+    //
+    if (value === "—" || value === "-" || value === "") {
+      f.append(el("i", undefined, label), el("b", "nc", "Not checked yet"));
+      return f;
+    }
     // A long figure (a price with many zeros) shrinks to stay on one line; it never breaks in the middle of a number.
     const b = el("b", [tone, value.length > 13 ? "xl" : value.length > 10 ? "lg" : ""].filter(Boolean).join(" ") || undefined, value);
     f.append(el("i", undefined, label), b);
